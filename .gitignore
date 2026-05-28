@@ -1,0 +1,47 @@
+# Environment variables (SECRETS - NEVER COMMIT)
+.env
+.env.local
+.env.*.local
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Python
+.venv/
+__pycache__/
+
+# Build outputs
+dist/
+build/
+
+# Data files (local backups and analytics)
+data/
+*.jsonl
+*.parquet
+!sample_data/
+!sample_data/**/*.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+logs/runs
+logs/*.log
+*.py[cod]
+
+.bruin.yml

@@ -1,0 +1,41 @@
+{
+  "name": "haxball-analytics",
+  "version": "1.0.0",
+  "description": "Bruin-powered real-time analytics for live Haxball rooms",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "demo": "ts-node src/demo-server.ts",
+    "start:demo": "node dist/demo-server.js",
+    "bruin:run": "bruin run bruin",
+    "bruin:validate": "bruin validate bruin",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "haxball",
+    "analytics",
+    "real-time",
+    "sports"
+  ],
+  "author": "Deniz Arda Aslan",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "haxball.js": "^4.0.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.10",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

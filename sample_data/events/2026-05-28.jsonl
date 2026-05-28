@@ -1,0 +1,8 @@
+{"eventId":"evt-001","gameId":"demo-game-1","timestamp":"2026-05-28T10:00:00.000Z","eventType":"gameStart"}
+{"eventId":"evt-002","gameId":"demo-game-1","timestamp":"2026-05-28T10:00:01.000Z","eventType":"kick","playerId":1,"playerName":"Deniz","team":1,"position":{"x":110,"y":5},"ballPosition":{"x":190,"y":8},"ballSpeed":{"speedX":8.2,"speedY":0.5},"xg":0.41}
+{"eventId":"evt-003","gameId":"demo-game-1","timestamp":"2026-05-28T10:00:02.000Z","eventType":"goal","playerId":1,"playerName":"Deniz","team":1,"ballPosition":{"x":370,"y":6},"xg":0.41}
+{"eventId":"evt-004","gameId":"demo-game-1","timestamp":"2026-05-28T10:00:03.000Z","eventType":"gameStop"}
+{"eventId":"evt-005","gameId":"demo-game-2","timestamp":"2026-05-28T11:00:00.000Z","eventType":"gameStart"}
+{"eventId":"evt-006","gameId":"demo-game-2","timestamp":"2026-05-28T11:00:01.000Z","eventType":"kick","playerId":3,"playerName":"Ada","team":2,"position":{"x":-120,"y":-8},"ballPosition":{"x":-210,"y":-6},"ballSpeed":{"speedX":-8.5,"speedY":0.1},"xg":0.36}
+{"eventId":"evt-007","gameId":"demo-game-2","timestamp":"2026-05-28T11:00:02.000Z","eventType":"goal","playerId":3,"playerName":"Ada","team":2,"ballPosition":{"x":-370,"y":-4},"xg":0.36}
+{"eventId":"evt-008","gameId":"demo-game-2","timestamp":"2026-05-28T11:00:03.000Z","eventType":"gameStop"}

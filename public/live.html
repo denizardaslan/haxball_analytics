@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haxball Analytics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07090d;
+      --panel: #0d1219;
+      --panel-2: #121a24;
+      --panel-3: #172131;
+      --line: #253244;
+      --line-strong: #3b4d66;
+      --text: #eef4ff;
+      --muted: #8d9bb0;
+      --faint: #5f6e82;
+      --red: #ff5364;
+      --blue: #55a7ff;
+      --green: #52d18f;
+      --yellow: #f5c95f;
+      --cyan: #5ee7ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(30, 45, 64, 0.28), rgba(7, 9, 13, 0) 280px),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 80px),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      align-items: center;
+      gap: 18px;
+      padding: 16px 22px 13px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, rgba(255,85,105,0.11), transparent 34%),
+        linear-gradient(180deg, rgba(18, 26, 36, 0.96), rgba(8, 11, 16, 0.92));
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      left: 22px;
+      right: 22px;
+      bottom: -1px;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(255,85,105,0.85), rgba(94,231,255,0.42), transparent 72%);
+      pointer-events: none;
+    }
+
+    h1 { margin: 0; font-size: 24px; line-height: 1; font-weight: 950; }
+    h2 { margin: 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .masthead-left { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .app-mark {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,85,105,0.46);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(255,85,105,0.20), rgba(94,231,255,0.08)),
+        rgba(7, 9, 13, 0.86);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 950;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 0 24px rgba(255,85,105,0.12);
+      flex: 0 0 auto;
+    }
+    .title-block { min-width: 0; }
+    .eyebrow {
+      margin-bottom: 7px;
+      color: var(--cyan);
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .subtitle { margin-top: 8px; color: var(--muted); font-size: 13px; }
+    .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .bruin-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 38px;
+      padding: 7px 11px;
+      border: 1px solid rgba(255,85,105,0.46);
+      border-radius: 7px;
+      background: rgba(255,85,105,0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .bruin-badge img {
+      width: 82px;
+      height: auto;
+      display: block;
+    }
+    .bruin-copy {
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.1;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+    .bruin-copy strong { color: var(--text); font-size: 11px; letter-spacing: 0.04em; }
+    .status, .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--yellow); box-shadow: 0 0 16px currentColor; }
+    .dot.connected { background: var(--green); }
+
+    nav { display: flex; gap: 8px; padding: 12px 22px 0; overflow-x: auto; }
+    .tab {
+      border: 1px solid var(--line);
+      background: rgba(13, 18, 25, 0.72);
+      color: var(--muted);
+      padding: 9px 12px;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      font-weight: 800;
+      min-width: max-content;
+    }
+    .tab.active { background: var(--panel); color: var(--text); border-bottom-color: var(--panel); }
+
+    main { padding: 18px 22px 28px; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .live-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(360px, 0.85fr); gap: 14px; }
+    .side-grid { display: grid; gap: 14px; }
+    .panel {
+      background: linear-gradient(180deg, rgba(18, 26, 36, 0.96), rgba(10, 14, 20, 0.96));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      min-width: 0;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .metric-label { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 900; letter-spacing: 0.08em; }
+    .metric-value { margin-top: 8px; font-size: 28px; font-weight: 950; line-height: 1; }
+    .metric-sub { margin-top: 7px; color: var(--faint); font-size: 12px; }
+    .team-red { color: var(--red); }
+    .team-blue { color: var(--blue); }
+    .team-green { color: var(--green); }
+    canvas { width: 100%; display: block; border-radius: 6px; background: #08120e; }
+    #fieldCanvas { aspect-ratio: 740 / 340; }
+    #raceCanvas { height: 190px; }
+
+    .field-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    .field-btn {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 900;
+      font-size: 12px;
+    }
+    .field-btn.active { background: #143629; border-color: rgba(82, 209, 143, 0.7); color: var(--text); }
+
+    .bar { height: 11px; background: #071018; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; display: flex; }
+    .bar span { display: block; height: 100%; }
+    .bar .red { background: linear-gradient(90deg, #7b1f2c, var(--red)); }
+    .bar .blue { background: linear-gradient(90deg, var(--blue), #1f4c83); }
+    .split-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 9px 0; color: var(--muted); font-size: 12px; }
+    .split-row strong { color: var(--text); }
+    .intel-list, .shot-list, .event-feed { display: grid; gap: 8px; max-height: 280px; overflow: auto; }
+    .intel, .event, .shot {
+      background: rgba(18, 26, 36, 0.82);
+      border: 1px solid rgba(59, 77, 102, 0.55);
+      border-radius: 6px;
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .shot { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; }
+    .shot-xg { padding: 3px 8px; border-radius: 4px; font-weight: 950; }
+    .shot.red .shot-xg { background: rgba(255, 83, 100, 0.16); color: var(--red); }
+    .shot.blue .shot-xg { background: rgba(85, 167, 255, 0.16); color: var(--blue); }
+    .shot-result { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 900; }
+    .shot-result.goal { color: var(--green); }
+    .empty { color: var(--faint); padding: 22px; text-align: center; }
+
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 780px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: middle; }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+    tr:hover td { background: rgba(85, 167, 255, 0.045); }
+    .section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .pipeline-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .match-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
+    .match-card { padding: 0; overflow: hidden; }
+    .match-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 13px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.025); }
+    .match-date { color: var(--muted); font-size: 12px; }
+    .winner-pill { border: 1px solid var(--line-strong); border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 950; text-transform: uppercase; }
+    .winner-pill.red { color: var(--red); border-color: rgba(255,83,100,0.45); }
+    .winner-pill.blue { color: var(--blue); border-color: rgba(85,167,255,0.45); }
+    .winner-pill.draw, .winner-pill.even { color: var(--muted); }
+    .match-scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; padding: 13px; }
+    .team-box { border: 1px solid var(--line); border-radius: 8px; padding: 11px; background: rgba(7, 12, 18, 0.55); }
+    .team-box.red { box-shadow: inset 3px 0 0 var(--red); }
+    .team-box.blue { box-shadow: inset 3px 0 0 var(--blue); }
+    .team-name { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-transform: uppercase; font-size: 12px; color: var(--muted); font-weight: 950; }
+    .team-score { font-size: 42px; font-weight: 950; line-height: 1; margin: 10px 0; }
+    .roster { min-height: 34px; color: var(--text); font-size: 13px; line-height: 1.35; }
+    .strength { margin-top: 9px; color: var(--muted); font-size: 12px; }
+    .score-vs { align-self: center; color: var(--faint); font-weight: 950; }
+    .compare-bars { padding: 0 13px 13px; display: grid; gap: 10px; }
+    .compare-row { display: grid; grid-template-columns: 54px 1fr 54px; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; }
+    .compare-row .right { text-align: right; }
+    .match-note { padding: 11px 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; background: rgba(94,231,255,0.035); }
+
+    @media (max-width: 1180px) {
+      .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .live-grid, .section-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      header { grid-template-columns: 1fr; }
+      .header-right { justify-content: flex-start; }
+      .masthead-left { align-items: flex-start; }
+      .app-mark { width: 40px; height: 40px; }
+      h1 { font-size: 20px; }
+      main { padding: 14px; }
+      nav { padding-left: 14px; }
+      .kpi-grid, .pipeline-grid { grid-template-columns: 1fr; }
+      .shot { grid-template-columns: auto minmax(0, 1fr); }
+      .shot-result { grid-column: 2; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="masthead-left">
+      <div class="app-mark" aria-hidden="true">HA</div>
+      <div class="title-block">
+        <div class="eyebrow">Live football intelligence cockpit</div>
+        <h1>Haxball Match Intelligence</h1>
+        <div class="subtitle">xG, player quality, lineup strength, and Bruin-validated pipeline health from real match events.</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="bruin-badge" title="Powered by Bruin">
+        <span class="bruin-copy">Powered by</span>
+        <img src="/bruin-logo-2025.svg" alt="Bruin">
+      </div>
+      <div class="pill">Refresh <strong id="refreshState">idle</strong></div>
+      <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting</span></div>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab active" data-view="live">Live Command</button>
+    <button class="tab" data-view="players">Player Quality</button>
+    <button class="tab" data-view="matches">Match Analytics</button>
+    <button class="tab" data-view="lineups">Lineup Analytics</button>
+    <button class="tab" data-view="xg">Finishing</button>
+    <button class="tab" data-view="pipeline">Pipeline</button>
+  </nav>
+
+  <main>
+    <section id="live" class="view active">
+      <div class="kpi-grid">
+        <div class="panel"><div class="metric-label">Score</div><div id="scoreMetric" class="metric-value">0 - 0</div><div class="metric-sub">current match</div></div>
+        <div class="panel"><div class="metric-label">Clock</div><div id="timeMetric" class="metric-value">0:00</div><div class="metric-sub">game time</div></div>
+        <div class="panel"><div class="metric-label">Red xG</div><div id="redXgMetric" class="metric-value team-red">0.00</div><div id="redShotMetric" class="metric-sub">0 shots</div></div>
+        <div class="panel"><div class="metric-label">Blue xG</div><div id="blueXgMetric" class="metric-value team-blue">0.00</div><div id="blueShotMetric" class="metric-sub">0 shots</div></div>
+        <div class="panel"><div class="metric-label">Win Lean</div><div id="winLeanMetric" class="metric-value team-green">Even</div><div id="winLeanSub" class="metric-sub">score + xG model</div></div>
+        <div class="panel"><div class="metric-label">Tempo</div><div id="tempoMetric" class="metric-value">0</div><div class="metric-sub">kicks/min</div></div>
+      </div>
+
+      <div class="live-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Live Tactical Map</h2>
+            <div class="field-controls">
+              <button class="field-btn active" data-layer="players">Players</button>
+              <button class="field-btn active" data-layer="shots">Shots</button>
+              <button class="field-btn active" data-layer="trail">Ball Trail</button>
+            </div>
+          </div>
+          <canvas id="fieldCanvas" width="740" height="340"></canvas>
+          <div class="split-row">
+            <span>Red pressure <strong id="redPressure">0</strong></span>
+            <div class="bar" style="width: 220px;"><span id="redPressureBar" class="red" style="width: 50%"></span><span id="bluePressureBar" class="blue" style="width: 50%"></span></div>
+            <span style="text-align:right;">Blue pressure <strong id="bluePressure">0</strong></span>
+          </div>
+        </div>
+
+        <div class="side-grid">
+          <div class="panel">
+            <div class="panel-head"><h2>Analyst Feed</h2></div>
+            <div id="intelList" class="intel-list"><div class="empty">Waiting for live signals</div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>xG Race</h2></div>
+            <canvas id="raceCanvas" width="520" height="190"></canvas>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Shot Ledger</h2></div>
+            <div id="shotList" class="shot-list"><div class="empty">No qualifying shots yet</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-grid" style="margin-top:14px;">
+        <div class="panel"><div class="panel-head"><h2>Event Stream</h2></div><div id="eventFeed" class="event-feed"><div class="empty">Waiting for room events</div></div></div>
+        <div class="panel"><div class="panel-head"><h2>Live Player Board</h2></div><div id="livePlayersTable" class="table-wrap"></div></div>
+      </div>
+    </section>
+
+    <section id="players" class="view"><div class="panel"><div class="panel-head"><h2>Player Quality</h2></div><div id="playersTable" class="table-wrap"></div></div></section>
+    <section id="matches" class="view"><div id="matchCards" class="match-grid"></div></section>
+    <section id="lineups" class="view"><div class="section-grid"><div class="panel"><div class="panel-head"><h2>Lineup Performance</h2></div><div id="lineupsTable" class="table-wrap"></div></div><div class="panel"><div class="panel-head"><h2>Lineup Intelligence</h2></div><div id="lineupIntel" class="intel-list"></div></div></div></section>
+    <section id="xg" class="view"><div class="panel"><div class="panel-head"><h2>Finishing Profiles</h2></div><div id="xgTable" class="table-wrap"></div></div></section>
+    <section id="pipeline" class="view"><div class="pipeline-grid" id="pipelineCards"></div></section>
+  </main>
+
+  <script>
+    const state = {
+      latestSnapshot: null,
+      stats: null,
+      events: [],
+      ballTrail: [],
+      xgRace: [],
+      layers: { players: true, shots: true, trail: true },
+      api: { summary: null, players: [], matches: [], lineups: [], xg: [], pipeline: {}, refreshStatus: null },
+    };
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const fieldCanvas = document.getElementById('fieldCanvas');
+    const fieldCtx = fieldCanvas.getContext('2d');
+    const raceCanvas = document.getElementById('raceCanvas');
+    const raceCtx = raceCanvas.getContext('2d');
+
+    document.querySelectorAll('.tab').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+        document.querySelectorAll('.view').forEach((view) => view.classList.remove('active'));
+        button.classList.add('active');
+        document.getElementById(button.dataset.view).classList.add('active');
+        renderAll();
+      });
+    });
+
+    document.querySelectorAll('.field-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        const layer = button.dataset.layer;
+        state.layers[layer] = !state.layers[layer];
+        button.classList.toggle('active', state.layers[layer]);
+        drawField();
+      });
+    });
+
+    function fieldX(x) { return ((x + 370) / 740) * fieldCanvas.width; }
+    function fieldY(y) { return ((y + 170) / 340) * fieldCanvas.height; }
+    function formatTime(seconds = 0) {
+      const safe = Math.max(0, Math.floor(seconds));
+      return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+    }
+    function n(value, digits = 2) { return Number(value || 0).toFixed(digits); }
+    function pct(value) { return `${Math.round(Number(value || 0))}%`; }
+
+    function shotSummary(team) {
+      return state.stats?.shots?.summary?.[team] || { totalShots: 0, totalXG: 0, goals: 0 };
+    }
+
+    function drawPitch() {
+      fieldCtx.clearRect(0, 0, fieldCanvas.width, fieldCanvas.height);
+      fieldCtx.fillStyle = '#0b2117';
+      fieldCtx.fillRect(0, 0, fieldCanvas.width, fieldCanvas.height);
+      fieldCtx.strokeStyle = 'rgba(238,244,255,0.32)';
+      fieldCtx.lineWidth = 2;
+      fieldCtx.strokeRect(12, 12, fieldCanvas.width - 24, fieldCanvas.height - 24);
+      fieldCtx.beginPath();
+      fieldCtx.moveTo(fieldCanvas.width / 2, 12);
+      fieldCtx.lineTo(fieldCanvas.width / 2, fieldCanvas.height - 12);
+      fieldCtx.stroke();
+      fieldCtx.beginPath();
+      fieldCtx.arc(fieldCanvas.width / 2, fieldCanvas.height / 2, 75, 0, Math.PI * 2);
+      fieldCtx.stroke();
+      fieldCtx.strokeStyle = 'rgba(94,231,255,0.22)';
+      for (let i = 1; i < 4; i++) {
+        const x = i * fieldCanvas.width / 4;
+        fieldCtx.beginPath();
+        fieldCtx.moveTo(x, 12);
+        fieldCtx.lineTo(x, fieldCanvas.height - 12);
+        fieldCtx.stroke();
+      }
+      fieldCtx.fillStyle = '#eef4ff';
+      fieldCtx.fillRect(0, fieldY(-64), 12, fieldY(64) - fieldY(-64));
+      fieldCtx.fillRect(fieldCanvas.width - 12, fieldY(-64), 12, fieldY(64) - fieldY(-64));
+    }
+
+    function drawTrail() {
+      if (state.ballTrail.length < 2) return;
+      fieldCtx.lineWidth = 2;
+      for (let i = 1; i < state.ballTrail.length; i++) {
+        const prev = state.ballTrail[i - 1];
+        const cur = state.ballTrail[i];
+        fieldCtx.strokeStyle = `rgba(245,201,95,${i / state.ballTrail.length * 0.55})`;
+        fieldCtx.beginPath();
+        fieldCtx.moveTo(fieldX(prev.x), fieldY(prev.y));
+        fieldCtx.lineTo(fieldX(cur.x), fieldY(cur.y));
+        fieldCtx.stroke();
+      }
+    }
+
+    function drawShots() {
+      const shots = state.stats?.shots?.shots || [];
+      for (const shot of shots) {
+        if (!shot.position) continue;
+        const x = fieldX(shot.position.x);
+        const y = fieldY(shot.position.y);
+        const xg = Number(shot.xg || 0);
+        const radius = 7 + xg * 24;
+        const isGoal = shot.result === 'goal';
+        const color = isGoal ? '#52d18f' : shot.team === 1 ? '#ff5364' : '#55a7ff';
+        fieldCtx.beginPath();
+        fieldCtx.arc(x, y, radius, 0, Math.PI * 2);
+        fieldCtx.fillStyle = isGoal ? 'rgba(82,209,143,0.34)' : `${color}33`;
+        fieldCtx.fill();
+        fieldCtx.strokeStyle = color;
+        fieldCtx.lineWidth = 2;
+        fieldCtx.stroke();
+        fieldCtx.fillStyle = '#eef4ff';
+        fieldCtx.font = 'bold 10px system-ui';
+        fieldCtx.textAlign = 'center';
+        fieldCtx.textBaseline = 'middle';
+        fieldCtx.fillText(xg.toFixed(2), x, y);
+      }
+    }
+
+    function drawPlayers(snapshot) {
+      for (const player of snapshot.players || []) {
+        const x = fieldX(player.x);
+        const y = fieldY(player.y);
+        const color = player.team === 1 ? '#ff5364' : player.team === 2 ? '#55a7ff' : '#8d9bb0';
+        fieldCtx.beginPath();
+        fieldCtx.fillStyle = color;
+        fieldCtx.arc(x, y, 12, 0, Math.PI * 2);
+        fieldCtx.fill();
+        fieldCtx.strokeStyle = 'rgba(238,244,255,0.8)';
+        fieldCtx.lineWidth = 1;
+        fieldCtx.stroke();
+        fieldCtx.fillStyle = '#eef4ff';
+        fieldCtx.font = 'bold 10px system-ui';
+        fieldCtx.textAlign = 'center';
+        fieldCtx.textBaseline = 'alphabetic';
+        fieldCtx.fillText(player.name.slice(0, 9), x, y - 17);
+      }
+
+      if (snapshot.ball) {
+        fieldCtx.beginPath();
+        fieldCtx.fillStyle = '#f5c95f';
+        fieldCtx.arc(fieldX(snapshot.ball.x), fieldY(snapshot.ball.y), 7, 0, Math.PI * 2);
+        fieldCtx.fill();
+      }
+    }
+
+    function drawField() {
+      const snapshot = state.latestSnapshot;
+      drawPitch();
+      if (state.layers.trail) drawTrail();
+
+      if (!snapshot) {
+        fieldCtx.fillStyle = 'rgba(238,244,255,0.65)';
+        fieldCtx.font = '18px system-ui';
+        fieldCtx.textAlign = 'center';
+        fieldCtx.fillText('Waiting for live room data', fieldCanvas.width / 2, fieldCanvas.height / 2);
+        return;
+      }
+
+      if (state.layers.shots) drawShots();
+      if (state.layers.players) drawPlayers(snapshot);
+    }
+
+    function drawRace() {
+      raceCtx.clearRect(0, 0, raceCanvas.width, raceCanvas.height);
+      raceCtx.fillStyle = '#080d13';
+      raceCtx.fillRect(0, 0, raceCanvas.width, raceCanvas.height);
+      raceCtx.strokeStyle = 'rgba(238,244,255,0.14)';
+      raceCtx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = i * raceCanvas.height / 4;
+        raceCtx.beginPath();
+        raceCtx.moveTo(28, y);
+        raceCtx.lineTo(raceCanvas.width - 10, y);
+        raceCtx.stroke();
+      }
+      if (state.xgRace.length < 2) {
+        raceCtx.fillStyle = '#5f6e82';
+        raceCtx.font = '13px system-ui';
+        raceCtx.textAlign = 'center';
+        raceCtx.fillText('xG race appears after qualifying shots', raceCanvas.width / 2, raceCanvas.height / 2);
+        return;
+      }
+      const maxXg = Math.max(0.25, ...state.xgRace.map((p) => Math.max(p.red, p.blue)));
+      const maxTime = Math.max(1, ...state.xgRace.map((p) => p.time));
+      function plot(team, color) {
+        raceCtx.strokeStyle = color;
+        raceCtx.lineWidth = 3;
+        raceCtx.beginPath();
+        state.xgRace.forEach((point, index) => {
+          const x = 28 + (point.time / maxTime) * (raceCanvas.width - 42);
+          const y = raceCanvas.height - 20 - (point[team] / maxXg) * (raceCanvas.height - 42);
+          if (index === 0) raceCtx.moveTo(x, y);
+          else raceCtx.lineTo(x, y);
+        });
+        raceCtx.stroke();
+      }
+      plot('red', '#ff5364');
+      plot('blue', '#55a7ff');
+    }
+
+    function renderLiveMetrics() {
+      const snapshot = state.latestSnapshot;
+      const red = shotSummary('red');
+      const blue = shotSummary('blue');
+      const redXg = Number(red.totalXG || 0);
+      const blueXg = Number(blue.totalXG || 0);
+      const redScore = snapshot?.score?.red || 0;
+      const blueScore = snapshot?.score?.blue || 0;
+      const leanValue = (redScore - blueScore) * 0.8 + (redXg - blueXg);
+      const kicks = state.events.filter((event) => event.eventType === 'kick').length;
+      const minutes = Math.max(1, (snapshot?.gameTime || 0) / 60);
+      const lean = Math.abs(leanValue) < 0.18 ? 'Even' : leanValue > 0 ? 'Red' : 'Blue';
+      document.getElementById('scoreMetric').textContent = snapshot ? `${redScore} - ${blueScore}` : '0 - 0';
+      document.getElementById('timeMetric').textContent = snapshot ? formatTime(snapshot.gameTime) : '0:00';
+      document.getElementById('redXgMetric').textContent = n(redXg);
+      document.getElementById('blueXgMetric').textContent = n(blueXg);
+      document.getElementById('redShotMetric').textContent = `${red.totalShots || 0} shots`;
+      document.getElementById('blueShotMetric').textContent = `${blue.totalShots || 0} shots`;
+      document.getElementById('winLeanMetric').textContent = lean;
+      document.getElementById('winLeanMetric').className = `metric-value ${lean === 'Red' ? 'team-red' : lean === 'Blue' ? 'team-blue' : 'team-green'}`;
+      document.getElementById('winLeanSub').textContent = `edge ${Math.abs(leanValue).toFixed(2)}`;
+      document.getElementById('tempoMetric').textContent = Math.round(kicks / minutes);
+    }
+
+    function renderPressure() {
+      const snapshot = state.latestSnapshot;
+      const ballX = snapshot?.ball?.x || 0;
+      const redPressure = Math.max(0, Math.min(100, Math.round((ballX + 370) / 740 * 100)));
+      const bluePressure = 100 - redPressure;
+      document.getElementById('redPressure').textContent = redPressure;
+      document.getElementById('bluePressure').textContent = bluePressure;
+      document.getElementById('redPressureBar').style.width = `${redPressure}%`;
+      document.getElementById('bluePressureBar').style.width = `${bluePressure}%`;
+    }
+
+    function renderIntel() {
+      const red = shotSummary('red');
+      const blue = shotSummary('blue');
+      const redXg = Number(red.totalXG || 0);
+      const blueXg = Number(blue.totalXG || 0);
+      const shots = state.stats?.shots?.shots || [];
+      const latest = shots.at(-1);
+      const insights = [];
+      if (latest) insights.push(`Latest chance: ${latest.playerName} generated ${n(latest.xg)} xG for ${latest.team === 1 ? 'red' : 'blue'}.`);
+      if (Math.abs(redXg - blueXg) > 0.25) insights.push(`${redXg > blueXg ? 'Red' : 'Blue'} owns the better chance profile by ${n(Math.abs(redXg - blueXg))} xG.`);
+      const conversionRed = red.totalShots ? red.goals / red.totalShots : 0;
+      const conversionBlue = blue.totalShots ? blue.goals / blue.totalShots : 0;
+      if (red.totalShots || blue.totalShots) insights.push(`Conversion: red ${pct(conversionRed * 100)}, blue ${pct(conversionBlue * 100)}.`);
+      if (!insights.length) insights.push('No qualifying shots yet. The model is ignoring build-up kicks until they are goalward and in the opponent half.');
+      document.getElementById('intelList').innerHTML = insights.map((item) => `<div class="intel">${escapeHtml(item)}</div>`).join('');
+    }
+
+    function renderEvents() {
+      const feed = document.getElementById('eventFeed');
+      if (!state.events.length) {
+        feed.innerHTML = '<div class="empty">Waiting for room events</div>';
+        return;
+      }
+      feed.innerHTML = state.events.slice(-18).reverse().map((event) => {
+        const teamClass = event.team === 1 ? 'team-red' : event.team === 2 ? 'team-blue' : '';
+        const actor = event.playerName ? `<strong class="${teamClass}">${escapeHtml(event.playerName)}</strong>` : 'Room';
+        const xg = event.metadata?.isShot ? ` · xG ${n(event.xg)}` : '';
+        return `<div class="event">${new Date(event.timestamp).toLocaleTimeString()} · ${actor} · ${event.eventType}${xg}</div>`;
+      }).join('');
+    }
+
+    function renderShots() {
+      const shots = state.stats?.shots?.shots || [];
+      const list = document.getElementById('shotList');
+      if (!shots.length) {
+        list.innerHTML = '<div class="empty">No qualifying shots yet</div>';
+        return;
+      }
+      list.innerHTML = shots.slice(-12).reverse().map((shot) => {
+        const team = shot.team === 1 ? 'red' : 'blue';
+        const result = shot.result || 'pending';
+        return `<div class="shot ${team}"><span class="shot-xg">${n(shot.xg)}</span><span>${escapeHtml(shot.playerName || 'Unknown')}</span><span class="shot-result ${result}">${result}</span></div>`;
+      }).join('');
+    }
+
+    function table(rows, columns) {
+      if (!rows || !rows.length) return '<div class="empty">No rows yet. Finish a game to populate this view.</div>';
+      const head = columns.map((col) => `<th>${col.label}</th>`).join('');
+      const body = rows.map((row) => `<tr>${columns.map((col) => `<td>${col.render ? col.render(row) : row[col.key] ?? ''}</td>`).join('')}</tr>`).join('');
+      return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function playerChips(value) {
+      return value ? escapeHtml(value).replaceAll(', ', '<br>') : '<span style="color:var(--faint)">No players</span>';
+    }
+
+    function widthPair(left, right) {
+      const total = Math.max(1, Number(left || 0) + Number(right || 0));
+      return [Math.round(Number(left || 0) / total * 100), Math.round(Number(right || 0) / total * 100)];
+    }
+
+    function renderMatchCards() {
+      const container = document.getElementById('matchCards');
+      const rows = state.api.matches || [];
+      if (!rows.length) {
+        container.innerHTML = '<div class="panel empty">Finish a game to populate match analytics.</div>';
+        return;
+      }
+
+      container.innerHTML = rows.slice(0, 12).map((row) => {
+        const [redStrengthWidth, blueStrengthWidth] = widthPair(row.red_strength, row.blue_strength);
+        const [redXgWidth, blueXgWidth] = widthPair(row.red_xg, row.blue_xg);
+        const [redShotWidth, blueShotWidth] = widthPair(row.red_shots, row.blue_shots);
+        const favorite = row.strength_favorite || 'even';
+        const winner = row.winner || 'draw';
+        const note = row.scoreboard_upset
+          ? 'Scoreboard upset: the xG winner did not win.'
+          : favorite !== 'even' && favorite === winner
+            ? 'The stronger side converted its edge.'
+            : favorite !== 'even' && winner !== 'draw'
+              ? 'The underdog result beat the strength model.'
+              : 'Balanced match profile.';
+        return `
+          <article class="panel match-card">
+            <div class="match-top">
+              <span class="match-date">${new Date(row.started_at).toLocaleString()}</span>
+              <span class="winner-pill ${winner}">Winner: ${winner}</span>
+            </div>
+            <div class="match-scoreboard">
+              <div class="team-box red">
+                <div class="team-name"><span>Red</span><span>${row.red_player_count || 0} players</span></div>
+                <div class="team-score team-red">${row.red_score}</div>
+                <div class="roster">${playerChips(row.red_players)}</div>
+                <div class="strength">Strength ${n(row.red_strength)} ${favorite === 'red' ? '· favorite' : ''}</div>
+              </div>
+              <div class="score-vs">VS</div>
+              <div class="team-box blue">
+                <div class="team-name"><span>Blue</span><span>${row.blue_player_count || 0} players</span></div>
+                <div class="team-score team-blue">${row.blue_score}</div>
+                <div class="roster">${playerChips(row.blue_players)}</div>
+                <div class="strength">Strength ${n(row.blue_strength)} ${favorite === 'blue' ? '· favorite' : ''}</div>
+              </div>
+            </div>
+            <div class="compare-bars">
+              <div class="compare-row"><span>${n(row.red_strength)}</span><div class="bar"><span class="red" style="width:${redStrengthWidth}%"></span><span class="blue" style="width:${blueStrengthWidth}%"></span></div><span class="right">${n(row.blue_strength)}</span></div>
+              <div class="compare-row"><span>${n(row.red_xg)}</span><div class="bar"><span class="red" style="width:${redXgWidth}%"></span><span class="blue" style="width:${blueXgWidth}%"></span></div><span class="right">${n(row.blue_xg)}</span></div>
+              <div class="compare-row"><span>${row.red_shots}</span><div class="bar"><span class="red" style="width:${redShotWidth}%"></span><span class="blue" style="width:${blueShotWidth}%"></span></div><span class="right">${row.blue_shots}</span></div>
+            </div>
+            <div class="match-note">${escapeHtml(note)} Strength delta ${n(row.strength_delta)} · xG delta ${n(row.xg_delta)}.</div>
+          </article>
+        `;
+      }).join('');
+    }
+
+    function renderLivePlayers() {
+      const snapshot = state.latestSnapshot;
+      const rows = (snapshot?.players || []).filter((p) => p.team > 0).map((player) => {
+        const playerShots = (state.stats?.shots?.shots || []).filter((shot) => shot.playerId === player.id);
+        return {
+          player: player.name,
+          team: player.team === 1 ? 'Red' : 'Blue',
+          x: Math.round(player.x),
+          y: Math.round(player.y),
+          shots: playerShots.length,
+          xg: n(playerShots.reduce((sum, shot) => sum + Number(shot.xg || 0), 0)),
+        };
+      });
+      document.getElementById('livePlayersTable').innerHTML = table(rows, [
+        { key: 'player', label: 'Player' }, { key: 'team', label: 'Team' }, { key: 'x', label: 'X' },
+        { key: 'y', label: 'Y' }, { key: 'shots', label: 'Shots' }, { key: 'xg', label: 'Live xG' },
+      ]);
+    }
+
+    function renderTables() {
+      document.getElementById('playersTable').innerHTML = table(state.api.players, [
+        { key: 'rank', label: '#' }, { key: 'player_name', label: 'Player' }, { key: 'impact_score', label: 'Impact' },
+        { key: 'games_played', label: 'Games' }, { key: 'minutes_played', label: 'Min' }, { key: 'goals', label: 'Goals' },
+        { key: 'shots', label: 'Shots' }, { key: 'total_xg', label: 'xG' }, { key: 'xg_per_shot', label: 'xG/Shot' },
+        { key: 'shot_conversion_rate', label: 'Conv %' }, { key: 'win_rate', label: 'Win %' },
+      ]);
+      document.getElementById('lineupsTable').innerHTML = table(state.api.lineups, [
+        { key: 'lineup', label: 'Lineup' }, { key: 'games', label: 'Games' }, { key: 'wins', label: 'Wins' },
+        { key: 'win_rate', label: 'Win %' }, { key: 'avg_strength', label: 'Strength' }, { key: 'avg_strength_edge', label: 'Edge' },
+        { key: 'goals', label: 'Goals' }, { key: 'goals_against', label: 'Against' }, { key: 'shots', label: 'Shots' },
+        { key: 'xg', label: 'xG' }, { key: 'xg_against', label: 'xGA' }, { key: 'xg_diff', label: 'xG Diff' },
+      ]);
+      document.getElementById('xgTable').innerHTML = table(state.api.xg, [
+        { key: 'player_name', label: 'Player' }, { key: 'profile', label: 'Profile' }, { key: 'goals', label: 'Goals' },
+        { key: 'shots', label: 'Shots' }, { key: 'total_xg', label: 'xG' }, { key: 'xg_overperformance', label: 'Goals - xG' },
+      ]);
+    }
+
+    function renderLineupIntel() {
+      const rows = state.api.lineups || [];
+      if (!rows.length) {
+        document.getElementById('lineupIntel').innerHTML = '<div class="empty">No lineup rows yet</div>';
+        return;
+      }
+      document.getElementById('lineupIntel').innerHTML = rows.slice(0, 8).map((row) => {
+        const text = `${row.lineup} · ${row.games} games · ${pct(row.win_rate)} win rate · strength ${n(row.avg_strength)} · edge ${n(row.avg_strength_edge)} · xG diff ${n(row.xg_diff)}`;
+        return `<div class="intel">${escapeHtml(text)}</div>`;
+      }).join('');
+    }
+
+    function renderPipeline() {
+      document.getElementById('refreshState').textContent = state.api.refreshStatus?.state || 'idle';
+      const entries = Object.entries({ ...(state.api.pipeline || {}), analytics_refresh: state.api.refreshStatus?.state || 'idle' });
+      document.getElementById('pipelineCards').innerHTML = entries.length
+        ? entries.map(([metric, value]) => `<div class="panel"><div class="metric-label">${metric.replaceAll('_', ' ')}</div><div class="metric-value">${escapeHtml(String(value))}</div></div>`).join('')
+        : '<div class="panel empty">Run Bruin to populate pipeline freshness.</div>';
+    }
+
+    function updateDerivedSeries() {
+      const snapshot = state.latestSnapshot;
+      const red = Number(shotSummary('red').totalXG || 0);
+      const blue = Number(shotSummary('blue').totalXG || 0);
+      const time = snapshot?.gameTime || 0;
+      const last = state.xgRace.at(-1);
+      if (!last || last.red !== red || last.blue !== blue || Math.abs(last.time - time) > 3) {
+        state.xgRace.push({ time, red, blue });
+        state.xgRace = state.xgRace.slice(-80);
+      }
+    }
+
+    function renderAll() {
+      updateDerivedSeries();
+      renderLiveMetrics();
+      renderPressure();
+      drawField();
+      drawRace();
+      renderIntel();
+      renderShots();
+      renderEvents();
+      renderLivePlayers();
+      renderMatchCards();
+      renderTables();
+      renderLineupIntel();
+      renderPipeline();
+    }
+
+    async function fetchApi(endpoint) {
+      const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`${endpoint} failed`);
+      return res.json();
+    }
+
+    async function refreshAnalytics() {
+      try {
+        const [summary, players, matches, lineups, xg, pipeline, refreshStatus] = await Promise.all([
+          fetchApi('/api/analytics/summary'),
+          fetchApi('/api/analytics/players'),
+          fetchApi('/api/analytics/matches'),
+          fetchApi('/api/analytics/lineups'),
+          fetchApi('/api/analytics/xg'),
+          fetchApi('/api/pipeline/status'),
+          fetchApi('/api/analytics-refresh/status'),
+        ]);
+        state.api.summary = summary.rows?.[0] || null;
+        state.api.players = players.rows || [];
+        state.api.matches = matches.rows || [];
+        state.api.lineups = lineups.rows || [];
+        state.api.xg = xg.rows || [];
+        state.api.pipeline = pipeline.metrics || {};
+        state.api.refreshStatus = refreshStatus;
+      } catch (error) {
+        console.warn(error);
+      }
+      renderAll();
+    }
+
+    function connectWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const socket = new WebSocket(`${protocol}://${location.host}`);
+      socket.addEventListener('open', () => {
+        statusDot.classList.add('connected');
+        statusText.textContent = 'Live room connected';
+      });
+      socket.addEventListener('close', () => {
+        statusDot.classList.remove('connected');
+        statusText.textContent = 'Reconnecting';
+        setTimeout(connectWebSocket, 2000);
+      });
+      socket.addEventListener('message', (message) => {
+        const payload = JSON.parse(message.data);
+        if (payload.type === 'init') {
+          state.events = payload.events || [];
+          state.latestSnapshot = payload.snapshots?.at(-1) || null;
+          state.stats = payload.stats || null;
+          state.ballTrail = (payload.snapshots || []).map((s) => s.ball).filter(Boolean).slice(-90);
+        }
+        if (payload.type === 'snapshot') {
+          state.latestSnapshot = payload.data;
+          if (payload.data?.ball) {
+            state.ballTrail.push(payload.data.ball);
+            state.ballTrail = state.ballTrail.slice(-90);
+          }
+        }
+        if (payload.type === 'event') {
+          state.events.push(payload.data);
+          state.events = state.events.slice(-80);
+          if (payload.data.eventType === 'gameStart') {
+            state.events = [payload.data];
+            state.ballTrail = [];
+            state.xgRace = [];
+          }
+          if (payload.data.eventType === 'gameStop') {
+            setTimeout(refreshAnalytics, 3000);
+            setTimeout(refreshAnalytics, 9000);
+            setTimeout(refreshAnalytics, 15000);
+          }
+        }
+        if (payload.type === 'stats') state.stats = payload.data;
+        renderAll();
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    connectWebSocket();
+    refreshAnalytics();
+    setInterval(refreshAnalytics, 30000);
+    renderAll();
+  </script>
+</body>
+</html>
