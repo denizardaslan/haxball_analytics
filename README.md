@@ -8,7 +8,7 @@ Haxball Analytics turns a public multiplayer Haxball room into a live sports ana
 
 It also brings the Bruin AI data analyst into the game itself. Players can ask questions in Haxball chat and get safe, read-only answers from the same DuckDB marts that power the dashboard.
 
-![Haxball Analytics live dashboard](docs/images/live-dashboard.png)
+![Haxball Analytics live gameplay and dashboard](docs/images/hax.gif)
 
 ## Why It Exists
 
