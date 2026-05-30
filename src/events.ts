@@ -17,6 +17,7 @@ import {
 } from './collector';
 import { recordKickForPossession } from './possession';
 import { processKickForShots, processGoalForShots } from './shots';
+import { answerBruinChatQuestion, isBruinChatCommand } from './bruin-chat-analyst';
 
 // Callbacks for event processing
 type EventCallback = (event: GameEvent) => void;
@@ -28,6 +29,11 @@ const SOLO_WARMUP_MESSAGE = 'Stats are paused; at least 2 players needed.';
 const DASHBOARD_URL = 'https://haxanalytics.denizaa.com/';
 const DASHBOARD_MESSAGE = `Live results of this game: ${DASHBOARD_URL}`;
 const TRAINING_STADIUM_PATH = path.join(process.cwd(), 'training_stadium.md');
+const BRUIN_CHAT_COOLDOWN_MS = parseInt(process.env.BRUIN_CHAT_COOLDOWN_MS || '15000', 10);
+const BRUIN_CHAT_MAX_CHARS = 235;
+const ANNOUNCEMENT_COLOR = 0xFFD166;
+const BRUIN_ANNOUNCEMENT_COLOR = 0xFF5364;
+const BRUIN_QUESTION_COLOR = 0xFFD166;
 
 type RoomPlayer = ReturnType<HaxballRoom['getPlayerList']>[number];
 
@@ -44,6 +50,7 @@ let selectionTimer: NodeJS.Timeout | null = null;
 let isResettingSoloGoal = false;
 let stadiumMode: 'classic' | 'training' | null = null;
 let trainingStadiumCache: string | null = null;
+const bruinChatLastUsed = new Map<number, number>();
 
 /**
  * Registers a callback to receive game events
@@ -171,8 +178,18 @@ function startOrRestartGame(room: HaxballRoom, restart: boolean): void {
   }
 }
 
-function announce(room: HaxballRoom, message: string, targetId?: number): void {
-  room.sendAnnouncement(message, targetId, 0xFFD166, 'bold', 1);
+function announce(room: HaxballRoom, message: string, targetId?: number, color = ANNOUNCEMENT_COLOR): void {
+  room.sendAnnouncement(message, targetId, color, 'bold', 1);
+}
+
+function announceBruin(room: HaxballRoom, message: string, targetId?: number): void {
+  for (let start = 0; start < message.length; start += BRUIN_CHAT_MAX_CHARS) {
+    announce(room, message.slice(start, start + BRUIN_CHAT_MAX_CHARS), targetId, BRUIN_ANNOUNCEMENT_COLOR);
+  }
+}
+
+function announceBruinQuestion(room: HaxballRoom, player: RoomPlayer, message: string): void {
+  announce(room, `${player.name}: ${message.trim()}`, undefined, BRUIN_QUESTION_COLOR);
 }
 
 function announceDashboard(room: HaxballRoom, targetId?: number): void {
@@ -477,6 +494,53 @@ function handleSelectionMessage(room: HaxballRoom, player: RoomPlayer, message: 
   return true;
 }
 
+function canUseBruinChat(player: RoomPlayer): { allowed: boolean; message?: string } {
+  if (process.env.ENABLE_BRUIN_CHAT === 'false') {
+    return { allowed: false, message: 'Bruin Analyst is disabled for this room.' };
+  }
+
+  if (process.env.BRUIN_CHAT_ADMIN_ONLY === 'true' && !player.admin) {
+    return { allowed: false, message: 'Bruin Analyst is admin-only right now.' };
+  }
+
+  const now = Date.now();
+  const lastUsed = bruinChatLastUsed.get(player.id) || 0;
+  const remainingMs = BRUIN_CHAT_COOLDOWN_MS - (now - lastUsed);
+
+  if (remainingMs > 0) {
+    return {
+      allowed: false,
+      message: `Bruin Analyst cooldown: wait ${Math.ceil(remainingMs / 1000)}s.`,
+    };
+  }
+
+  bruinChatLastUsed.set(player.id, now);
+  return { allowed: true };
+}
+
+async function handleBruinChatCommand(room: HaxballRoom, player: RoomPlayer, message: string): Promise<void> {
+  console.log(`[BruinChat] Command received from ${player.name} (${player.id}): ${message}`);
+
+  const permission = canUseBruinChat(player);
+  if (!permission.allowed) {
+    console.log(`[BruinChat] Command blocked for ${player.name}: ${permission.message}`);
+    announceBruin(room, permission.message || 'Bruin Analyst is unavailable.', player.id);
+    return;
+  }
+
+  announceBruinQuestion(room, player, message);
+
+  try {
+    const response = await answerBruinChatQuestion(message);
+    announceBruin(room, response.answer);
+    console.log(`[BruinChat] ${player.name}: ${response.question || '(help)'} -> ${response.intent}`);
+  } catch (error) {
+    const detail = (error as Error).message;
+    console.error('[BruinChat] Analyst query failed:', error);
+    announceBruin(room, `Bruin Analyst: query failed. ${detail.slice(0, 180)}`, player.id);
+  }
+}
+
 function startInactivityMonitor(room: HaxballRoom): void {
   if (INACTIVITY_LIMIT_MS <= 0) {
     console.log('[Events] Inactivity kicking disabled');
@@ -520,7 +584,6 @@ export function setupEventHandlers(room: HaxballRoom): void {
     if (!hasCompetitiveTeams(room)) {
       startGame(false);
       console.log('[Events] Solo warm-up started - live map enabled, analytics tracking disabled until both teams have players');
-      setTimeout(() => announce(room, SOLO_WARMUP_MESSAGE), 100);
       return;
     }
 
@@ -709,6 +772,7 @@ export function setupEventHandlers(room: HaxballRoom): void {
     console.log(`[Events] Player left: ${player.name} (ID: ${player.id})`);
     playerJoinOrder.delete(player.id);
     playerActivity.delete(player.id);
+    bruinChatLastUsed.delete(player.id);
 
   if (player.id === selectionCaptainId) {
       clearSelection();
@@ -727,6 +791,12 @@ export function setupEventHandlers(room: HaxballRoom): void {
 
   room.onPlayerChat = (player, message) => {
     markActive(player.id);
+
+    if (isBruinChatCommand(message)) {
+      void handleBruinChatCommand(room, player, message);
+      return false;
+    }
+
     return !handleSelectionMessage(room, player, message);
   };
 

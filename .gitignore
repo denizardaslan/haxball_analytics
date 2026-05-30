@@ -45,3 +45,4 @@ logs/*.log
 *.py[cod]
 
 .bruin.yml
+logs/queries
