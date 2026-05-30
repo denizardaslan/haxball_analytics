@@ -30,11 +30,12 @@ export async function createRoom(config: RoomConfig): Promise<HaxballRoom> {
   // Set default stadium and game rules
   room.setDefaultStadium('Classic');
   room.setScoreLimit(3);
-  room.setTimeLimit(5);
+  room.setTimeLimit(3);
+  room.setTeamsLock(true);
 
   console.log('[Room] Room created successfully!');
   console.log('[Room] Stadium: Classic');
-  console.log('[Room] Score limit: 3, Time limit: 5 minutes');
+  console.log('[Room] Score limit: 3, Time limit: 3 minutes');
 
   return room;
 }
@@ -53,8 +54,8 @@ export function getRoomConfig(): RoomConfig {
   }
 
   return {
-    roomName: process.env.ROOM_NAME || 'Haxball Analytics Room',
-    maxPlayers: parseInt(process.env.ROOM_MAX_PLAYERS || '10', 10),
+    roomName: process.env.ROOM_NAME || '⚽ Haxanalytics v2 | Live Dashboard and Results',
+    maxPlayers: Math.min(parseInt(process.env.ROOM_MAX_PLAYERS || '6', 10), 6),
     public: process.env.ROOM_PUBLIC === 'true',
     token,
   };

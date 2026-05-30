@@ -40,6 +40,7 @@ const SNAPSHOT_INTERVAL_MS = Math.round((SNAPSHOT_INTERVAL / 60) * 1000);
 
 // Current game state
 let currentGameId: string | null = null;
+let currentGameAnalyticsEnabled = true;
 let tickCount = 0;
 
 // Callbacks for snapshot processing
@@ -64,8 +65,9 @@ export interface GameStatsData {
 /**
  * Starts a new game session
  */
-export function startGame(): string {
+export function startGame(analyticsEnabled = true): string {
   currentGameId = randomUUID();
+  currentGameAnalyticsEnabled = analyticsEnabled;
   tickCount = 0;
   
   // Start all tracking modules for this game
@@ -74,7 +76,7 @@ export function startGame(): string {
   startDistanceTracking(currentGameId);
   startShotTracking(currentGameId);
   
-  console.log(`[Collector] New game started: ${currentGameId}`);
+  console.log(`[Collector] New ${analyticsEnabled ? 'tracked game' : 'live warm-up'} started: ${currentGameId}`);
   return currentGameId;
 }
 
@@ -94,6 +96,7 @@ export function endGame(): GameStatsData | null {
     };
     
     currentGameId = null;
+    currentGameAnalyticsEnabled = true;
     tickCount = 0;
     
     return statsData;
@@ -106,6 +109,13 @@ export function endGame(): GameStatsData | null {
  */
 export function getCurrentGameId(): string | null {
   return currentGameId;
+}
+
+/**
+ * Whether the current session should be written into durable analytics.
+ */
+export function isCurrentGameAnalyticsEnabled(): boolean {
+  return currentGameId !== null && currentGameAnalyticsEnabled;
 }
 
 // Store reference to room for player data access

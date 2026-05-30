@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Haxball Analytics</title>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-57NL6ZY4T3"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-57NL6ZY4T3');
+  </script>
   <style>
     :root {
       color-scheme: dark;
@@ -103,6 +110,8 @@
       border-radius: 7px;
       background: rgba(255,85,105,0.08);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      color: inherit;
+      text-decoration: none;
     }
     .bruin-badge img {
       width: 82px;
@@ -163,6 +172,7 @@
     .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
     .metric-label { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 900; letter-spacing: 0.08em; }
     .metric-value { margin-top: 8px; font-size: 28px; font-weight: 950; line-height: 1; }
+    .metric-value.compact { font-size: 18px; line-height: 1.18; overflow-wrap: anywhere; }
     .metric-sub { margin-top: 7px; color: var(--faint); font-size: 12px; }
     .team-red { color: var(--red); }
     .team-blue { color: var(--blue); }
@@ -265,10 +275,10 @@
       </div>
     </div>
     <div class="header-right">
-      <div class="bruin-badge" title="Powered by Bruin">
+      <a class="bruin-badge" href="https://getbruin.com/" target="_blank" rel="noopener noreferrer" title="Powered by Bruin">
         <span class="bruin-copy">Powered by</span>
-        <img src="/bruin-logo-2025.svg" alt="Bruin">
-      </div>
+        <img id="bruinLogo" src="bruin-logo-2025.svg" alt="Bruin">
+      </a>
       <div class="pill">Refresh <strong id="refreshState">idle</strong></div>
       <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting</span></div>
     </div>
@@ -349,7 +359,7 @@
       ballTrail: [],
       xgRace: [],
       layers: { players: true, shots: true, trail: true },
-      api: { summary: null, players: [], matches: [], lineups: [], xg: [], pipeline: {}, refreshStatus: null },
+      api: { summary: null, players: [], matches: [], lineups: [], xg: [], pipeline: {}, alltime: null, refreshStatus: null },
     };
 
     const statusDot = document.getElementById('statusDot');
@@ -738,11 +748,48 @@
       }).join('');
     }
 
+    function formatDateTime(value) {
+      if (!value) return '';
+      const clean = String(value).replace(/\.\d+$/, '');
+      const date = new Date(`${clean.replace(' ', 'T')}Z`);
+      if (Number.isNaN(date.getTime())) return clean;
+      return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date);
+    }
+
+    function statCard(label, value, options = {}) {
+      const compact = options.compact ? ' compact' : '';
+      const sub = options.sub ? `<div class="metric-sub">${escapeHtml(options.sub)}</div>` : '';
+      return `<div class="panel"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value${compact}">${escapeHtml(String(value ?? '-'))}</div>${sub}</div>`;
+    }
+
     function renderPipeline() {
       document.getElementById('refreshState').textContent = state.api.refreshStatus?.state || 'idle';
-      const entries = Object.entries({ ...(state.api.pipeline || {}), analytics_refresh: state.api.refreshStatus?.state || 'idle' });
-      document.getElementById('pipelineCards').innerHTML = entries.length
-        ? entries.map(([metric, value]) => `<div class="panel"><div class="metric-label">${metric.replaceAll('_', ' ')}</div><div class="metric-value">${escapeHtml(String(value))}</div></div>`).join('')
+      const alltime = state.api.alltime || {};
+      const pipeline = state.api.pipeline || {};
+      const cards = [
+        statCard('Tracked games', alltime.tracked_games),
+        statCard('Ranked players', alltime.ranked_players),
+        statCard('All players', alltime.players_seen_in_tracked_data, { sub: 'seen in tracked room data' }),
+        statCard('Player time', `${n(alltime.total_player_minutes)} min`, { sub: 'sum of player minutes' }),
+        statCard('Match time', `${n(alltime.total_match_minutes)} min`),
+        statCard('Goals', alltime.total_goals),
+        statCard('Shots', alltime.total_shots),
+        statCard('Total xG', n(alltime.total_xg)),
+        statCard('Unique lineups', alltime.unique_lineups),
+        statCard('Data since', formatDateTime(alltime.first_tracked_game_at), { compact: true }),
+        statCard('Last tracked game', formatDateTime(alltime.last_tracked_game_at), { compact: true }),
+        statCard('Last snapshot', formatDateTime(pipeline.last_snapshot_at), { compact: true, sub: 'pipeline freshness' }),
+        statCard('Event rows', pipeline.event_rows),
+        statCard('Snapshot rows', pipeline.snapshot_rows),
+        statCard('Refresh', state.api.refreshStatus?.state || 'idle'),
+      ];
+      document.getElementById('pipelineCards').innerHTML = cards.length
+        ? cards.join('')
         : '<div class="panel empty">Run Bruin to populate pipeline freshness.</div>';
     }
 
@@ -775,20 +822,21 @@
     }
 
     async function fetchApi(endpoint) {
-      const res = await fetch(endpoint);
+      const res = await fetch(appUrl(endpoint));
       if (!res.ok) throw new Error(`${endpoint} failed`);
       return res.json();
     }
 
     async function refreshAnalytics() {
       try {
-        const [summary, players, matches, lineups, xg, pipeline, refreshStatus] = await Promise.all([
+        const [summary, players, matches, lineups, xg, pipeline, alltime, refreshStatus] = await Promise.all([
           fetchApi('/api/analytics/summary'),
           fetchApi('/api/analytics/players'),
           fetchApi('/api/analytics/matches'),
           fetchApi('/api/analytics/lineups'),
           fetchApi('/api/analytics/xg'),
           fetchApi('/api/pipeline/status'),
+          fetchApi('/api/analytics/alltime'),
           fetchApi('/api/analytics-refresh/status'),
         ]);
         state.api.summary = summary.rows?.[0] || null;
@@ -797,6 +845,7 @@
         state.api.lineups = lineups.rows || [];
         state.api.xg = xg.rows || [];
         state.api.pipeline = pipeline.metrics || {};
+        state.api.alltime = alltime.rows?.[0] || null;
         state.api.refreshStatus = refreshStatus;
       } catch (error) {
         console.warn(error);
@@ -806,7 +855,7 @@
 
     function connectWebSocket() {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      const socket = new WebSocket(`${protocol}://${location.host}`);
+      const socket = new WebSocket(`${protocol}://${location.host}${appWsPath()}`);
       socket.addEventListener('open', () => {
         statusDot.classList.add('connected');
         statusText.textContent = 'Live room connected';
@@ -855,6 +904,26 @@
       div.textContent = text;
       return div.innerHTML;
     }
+
+    const appBasePath = (() => {
+      const path = location.pathname.endsWith('/live.html')
+        ? location.pathname.slice(0, -'/live.html'.length)
+        : location.pathname.replace(/\/$/, '');
+      if ((path === '' || path === '/') && location.hostname.startsWith('haxanalytics.')) {
+        return '/haxanalytics';
+      }
+      return path === '/' ? '' : path;
+    })();
+
+    function appUrl(path) {
+      return `${appBasePath}${path}`;
+    }
+
+    function appWsPath() {
+      return appBasePath ? `${appBasePath}/` : '/';
+    }
+
+    document.getElementById('bruinLogo').src = appUrl('/bruin-logo-2025.svg');
 
     connectWebSocket();
     refreshAnalytics();

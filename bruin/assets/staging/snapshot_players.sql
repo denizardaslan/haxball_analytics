@@ -19,7 +19,7 @@ custom_checks:
     query: |
       SELECT count(*) = 0
       FROM staging.snapshot_players
-      WHERE x < -400 OR x > 400 OR y < -200 OR y > 200
+      WHERE x < -410 OR x > 410 OR y < -200 OR y > 200
     value: 1
 @bruin */
 

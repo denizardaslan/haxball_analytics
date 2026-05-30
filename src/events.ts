@@ -4,15 +4,46 @@
  */
 
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { HaxballRoom } from './room';
-import type { GameEvent } from './types';
-import { getCurrentGameId, startGame, endGame, getCurrentPlayers } from './collector';
+import { Team, type GameEvent } from './types';
+import {
+  getCurrentGameId,
+  startGame,
+  endGame,
+  getCurrentPlayers,
+  isCurrentGameAnalyticsEnabled,
+} from './collector';
 import { recordKickForPossession } from './possession';
 import { processKickForShots, processGoalForShots } from './shots';
 
 // Callbacks for event processing
 type EventCallback = (event: GameEvent) => void;
 const eventCallbacks: EventCallback[] = [];
+const ACTIVE_PLAYERS_PER_TEAM = 2;
+const INACTIVITY_LIMIT_MS = 60_000;
+const INACTIVITY_CHECK_MS = 1_000;
+const SOLO_WARMUP_MESSAGE = 'Stats are paused; at least 2 players needed.';
+const DASHBOARD_URL = 'https://haxanalytics.denizaa.com/';
+const DASHBOARD_MESSAGE = `Live results of this game: ${DASHBOARD_URL}`;
+const TRAINING_STADIUM_PATH = path.join(process.cwd(), 'training_stadium.md');
+
+type RoomPlayer = ReturnType<HaxballRoom['getPlayerList']>[number];
+
+let joinSequence = 0;
+const playerJoinOrder = new Map<number, number>();
+const playerActivity = new Map<number, number>();
+let inactivityTimer: NodeJS.Timeout | null = null;
+let isManagingTeams = false;
+let pendingWinner: Team | null = null;
+let selectionTeam: Team.Red | Team.Blue | null = null;
+let selectionCaptainId: number | null = null;
+let selectionSlots = 0;
+let selectionTimer: NodeJS.Timeout | null = null;
+let isResettingSoloGoal = false;
+let stadiumMode: 'classic' | 'training' | null = null;
+let trainingStadiumCache: string | null = null;
 
 /**
  * Registers a callback to receive game events
@@ -51,23 +82,428 @@ function createEvent(
   };
 }
 
-/**
- * Updates admin status - assigns admin to first player if no admin exists
- */
-function updateAdmins(room: HaxballRoom): void {
-  const players = room.getPlayerList();
-  
-  // No players, nothing to do
-  if (players.length === 0) return;
-  
-  // Check if any player is already admin
-  const hasAdmin = players.some((p) => p.admin);
-  if (hasAdmin) return;
-  
-  // Assign admin to the first player
-  const firstPlayer = players[0];
-  room.setPlayerAdmin(firstPlayer.id, true);
-  console.log(`[Events] Auto-assigned admin to: ${firstPlayer.name}`);
+function playersByTeam(room: HaxballRoom, team: Team): RoomPlayer[] {
+  return room.getPlayerList().filter((player) => player.team === team);
+}
+
+function activePlayerCount(room: HaxballRoom): number {
+  return playersByTeam(room, Team.Red).length + playersByTeam(room, Team.Blue).length;
+}
+
+function hasCompetitiveTeams(room: HaxballRoom): boolean {
+  return playersByTeam(room, Team.Red).length > 0 && playersByTeam(room, Team.Blue).length > 0;
+}
+
+function isTrackedGameActive(): boolean {
+  return getCurrentGameId() !== null;
+}
+
+function isAnalyticsGameActive(): boolean {
+  return isCurrentGameAnalyticsEnabled();
+}
+
+function orderOf(player: RoomPlayer): number {
+  return playerJoinOrder.get(player.id) ?? Number.MAX_SAFE_INTEGER;
+}
+
+function orderedPlayers(players: RoomPlayer[]): RoomPlayer[] {
+  return [...players].sort((a, b) => orderOf(a) - orderOf(b));
+}
+
+function latestPlayer(players: RoomPlayer[]): RoomPlayer | undefined {
+  return [...players].sort((a, b) => orderOf(b) - orderOf(a))[0];
+}
+
+function markActive(playerId: number): void {
+  playerActivity.set(playerId, Date.now());
+}
+
+function setManagedTeam(room: HaxballRoom, playerId: number, team: Team): void {
+  isManagingTeams = true;
+  room.setPlayerTeam(playerId, team);
+  setTimeout(() => {
+    isManagingTeams = false;
+  }, 0);
+}
+
+function getTrainingStadium(): string {
+  if (!trainingStadiumCache) {
+    trainingStadiumCache = fs.readFileSync(TRAINING_STADIUM_PATH, 'utf8');
+  }
+
+  return trainingStadiumCache;
+}
+
+function setStadiumMode(room: HaxballRoom, mode: 'classic' | 'training'): void {
+  if (stadiumMode === mode) {
+    return;
+  }
+
+  if (mode === 'training') {
+    room.setCustomStadium(getTrainingStadium());
+  } else {
+    room.setDefaultStadium('Classic');
+  }
+
+  stadiumMode = mode;
+  console.log(`[Events] Stadium switched to ${mode}`);
+}
+
+function desiredStadiumMode(room: HaxballRoom): 'classic' | 'training' {
+  return hasCompetitiveTeams(room) ? 'classic' : 'training';
+}
+
+function startOrRestartGame(room: HaxballRoom, restart: boolean): void {
+  if (restart && room.getScores()) {
+    room.stopGame();
+    setTimeout(() => {
+      if (activePlayerCount(room) > 0) {
+        setStadiumMode(room, desiredStadiumMode(room));
+        room.startGame();
+      }
+    }, 150);
+    return;
+  }
+
+  if (!room.getScores()) {
+    setStadiumMode(room, desiredStadiumMode(room));
+    room.startGame();
+  }
+}
+
+function announce(room: HaxballRoom, message: string, targetId?: number): void {
+  room.sendAnnouncement(message, targetId, 0xFFD166, 'bold', 1);
+}
+
+function announceDashboard(room: HaxballRoom, targetId?: number): void {
+  announce(room, DASHBOARD_MESSAGE, targetId);
+}
+
+function clearPlayerAdmin(room: HaxballRoom, player: RoomPlayer): void {
+  if (player.admin) {
+    room.setPlayerAdmin(player.id, false);
+    console.log(`[Events] Removed admin from player: ${player.name}`);
+  }
+}
+
+function clearAllPlayerAdmins(room: HaxballRoom): void {
+  for (const player of room.getPlayerList()) {
+    clearPlayerAdmin(room, player);
+  }
+}
+
+function enforceActiveLimit(room: HaxballRoom): void {
+  const red = orderedPlayers(playersByTeam(room, Team.Red));
+  const blue = orderedPlayers(playersByTeam(room, Team.Blue));
+
+  for (const player of red.slice(ACTIVE_PLAYERS_PER_TEAM)) {
+    setManagedTeam(room, player.id, Team.Spectator);
+  }
+
+  for (const player of blue.slice(ACTIVE_PLAYERS_PER_TEAM)) {
+    setManagedTeam(room, player.id, Team.Spectator);
+  }
+}
+
+function maybeFillSecondPair(room: HaxballRoom): void {
+  const red = playersByTeam(room, Team.Red);
+  const blue = playersByTeam(room, Team.Blue);
+  const specs = orderedPlayers(playersByTeam(room, Team.Spectator));
+
+  if (red.length === 1 && blue.length === 1 && specs.length >= 2) {
+    setManagedTeam(room, specs[0].id, Team.Red);
+    setManagedTeam(room, specs[1].id, Team.Blue);
+    announce(room, `${specs[0].name} and ${specs[1].name} joined. Playing 2v2.`);
+  }
+}
+
+function fillTeamFromSpectators(room: HaxballRoom, team: Team, targetSize: number): number {
+  const currentSize = playersByTeam(room, team).length;
+  const needed = Math.max(0, targetSize - currentSize);
+  const specs = orderedPlayers(playersByTeam(room, Team.Spectator)).slice(0, needed);
+
+  for (const spec of specs) {
+    setManagedTeam(room, spec.id, team);
+    announce(room, `${spec.name} moved to ${team === Team.Red ? 'red' : 'blue'} to fill the game.`);
+  }
+
+  return specs.length;
+}
+
+function normalizeActiveTeams(room: HaxballRoom, restartAfterFill = false): void {
+  enforceActiveLimit(room);
+
+  const red = playersByTeam(room, Team.Red);
+  const blue = playersByTeam(room, Team.Blue);
+  const specs = orderedPlayers(playersByTeam(room, Team.Spectator));
+
+  if (red.length === 0 && blue.length === 0) {
+    const firstSpec = specs[0];
+    if (firstSpec) {
+      setManagedTeam(room, firstSpec.id, Team.Red);
+      startOrRestartGame(room, restartAfterFill);
+    }
+    return;
+  }
+
+  if (red.length < blue.length) {
+    const moved = fillTeamFromSpectators(room, Team.Red, Math.min(blue.length, ACTIVE_PLAYERS_PER_TEAM));
+    if (moved > 0) {
+      setTimeout(() => normalizeActiveTeams(room, restartAfterFill), 250);
+      return;
+    }
+
+    if (blue.length > 1) {
+      const playerToSit = latestPlayer(blue);
+      if (playerToSit) {
+        setManagedTeam(room, playerToSit.id, Team.Spectator);
+        announce(room, `${playerToSit.name} moved to spectators because no red replacement was available.`);
+      }
+    }
+    startOrRestartGame(room, true);
+    return;
+  }
+
+  if (blue.length < red.length) {
+    const moved = fillTeamFromSpectators(room, Team.Blue, Math.min(red.length, ACTIVE_PLAYERS_PER_TEAM));
+    if (moved > 0) {
+      setTimeout(() => normalizeActiveTeams(room, restartAfterFill), 250);
+      return;
+    }
+
+    if (red.length > 1) {
+      const playerToSit = latestPlayer(red);
+      if (playerToSit) {
+        setManagedTeam(room, playerToSit.id, Team.Spectator);
+        announce(room, `${playerToSit.name} moved to spectators because no blue replacement was available.`);
+      }
+    }
+    startOrRestartGame(room, true);
+    return;
+  }
+
+  if (red.length === 1 && blue.length === 1 && specs.length >= 2) {
+    setManagedTeam(room, specs[0].id, Team.Red);
+    setManagedTeam(room, specs[1].id, Team.Blue);
+    announce(room, `${specs[0].name} and ${specs[1].name} joined. Playing 2v2.`);
+    setTimeout(() => normalizeActiveTeams(room, restartAfterFill), 250);
+    return;
+  }
+
+  if (!room.getScores() && (playersByTeam(room, Team.Red).length > 0 || playersByTeam(room, Team.Blue).length > 0)) {
+    room.startGame();
+    return;
+  }
+
+  if (restartAfterFill) {
+    startOrRestartGame(room, true);
+  }
+}
+
+function handleAutoJoin(room: HaxballRoom, player: RoomPlayer): void {
+  if (selectionTeam != null) {
+    setManagedTeam(room, player.id, Team.Spectator);
+    setTimeout(() => announceSelectionChoices(room), 100);
+    return;
+  }
+
+  const red = playersByTeam(room, Team.Red);
+  const blue = playersByTeam(room, Team.Blue);
+
+  if (red.length === 0 && blue.length === 0) {
+    setManagedTeam(room, player.id, Team.Red);
+    startOrRestartGame(room, false);
+    return;
+  }
+
+  if (red.length === 1 && blue.length === 0) {
+    setManagedTeam(room, player.id, Team.Blue);
+    startOrRestartGame(room, true);
+    return;
+  }
+
+  setManagedTeam(room, player.id, Team.Spectator);
+  setTimeout(() => maybeFillSecondPair(room), 100);
+}
+
+function clearSelection(): void {
+  if (selectionTimer) {
+    clearTimeout(selectionTimer);
+    selectionTimer = null;
+  }
+
+  selectionTeam = null;
+  selectionCaptainId = null;
+  selectionSlots = 0;
+}
+
+function armSelectionTimer(room: HaxballRoom): void {
+  if (selectionTimer) {
+    clearTimeout(selectionTimer);
+  }
+
+  selectionTimer = setTimeout(() => {
+    if (selectionTeam == null || selectionCaptainId == null) {
+      return;
+    }
+
+    const captain = room.getPlayer(selectionCaptainId);
+    if (captain) {
+      room.kickPlayer(captain.id, 'No teammate selected in 15 seconds.', false);
+    }
+
+    clearSelection();
+    setTimeout(() => normalizeActiveTeams(room, true), 150);
+  }, 15_000);
+}
+
+function announceSelectionChoices(room: HaxballRoom): void {
+  if (selectionTeam == null || selectionCaptainId == null) {
+    return;
+  }
+
+  const captain = room.getPlayer(selectionCaptainId);
+  if (!captain || captain.team !== selectionTeam) {
+    clearSelection();
+    return;
+  }
+
+  if (selectionSlots <= 0) {
+    clearSelection();
+    startOrRestartGame(room, true);
+    return;
+  }
+
+  const specs = orderedPlayers(playersByTeam(room, Team.Spectator));
+  if (specs.length === 0) {
+    announce(room, `${captain.name}, no selectable spectators are available yet. Waiting for a teammate.`);
+    armSelectionTimer(room);
+    return;
+  }
+
+  const choices = [0, 1]
+    .map((index) => {
+      const spec = specs[index];
+      return `${index + 1}: ${spec ? spec.name : 'none'}`;
+    })
+    .join(' | ');
+  const message = `${captain.name}, choose your teammate: ${choices}. Type 1 or 2 in 15 seconds.`;
+  announce(room, message);
+  announce(room, message, captain.id);
+  armSelectionTimer(room);
+}
+
+function openLoserSelection(
+  room: HaxballRoom,
+  team: Team.Red | Team.Blue,
+  slots: number,
+  captain: RoomPlayer
+): void {
+  selectionTeam = team;
+  selectionCaptainId = captain.id;
+  selectionSlots = Math.max(0, slots - 1);
+
+  setManagedTeam(room, captain.id, team);
+
+  if (selectionSlots === 0) {
+    setTimeout(() => {
+      clearSelection();
+      startOrRestartGame(room, true);
+    }, 150);
+    return;
+  }
+
+  setTimeout(() => announceSelectionChoices(room), 150);
+}
+
+function handleGameRotation(room: HaxballRoom): void {
+  const scores = room.getScores();
+  const winner =
+    pendingWinner ??
+    (scores && scores.red !== scores.blue ? (scores.red > scores.blue ? Team.Red : Team.Blue) : null);
+
+  pendingWinner = null;
+
+  if (winner !== Team.Red && winner !== Team.Blue) {
+    return;
+  }
+
+  const loser = winner === Team.Red ? Team.Blue : Team.Red;
+  const waitingPlayers = orderedPlayers(playersByTeam(room, Team.Spectator));
+  const winnerSize = playersByTeam(room, winner).length;
+  const losers = playersByTeam(room, loser);
+
+  if (waitingPlayers.length === 0) {
+    announce(room, 'No waiting spectators. Starting a rematch.');
+    startOrRestartGame(room, true);
+    return;
+  }
+
+  for (const player of losers) {
+    setManagedTeam(room, player.id, Team.Spectator);
+  }
+
+  setTimeout(() => openLoserSelection(room, loser, Math.max(1, winnerSize), waitingPlayers[0]), 150);
+}
+
+function handleSelectionMessage(room: HaxballRoom, player: RoomPlayer, message: string): boolean {
+  if (selectionTeam == null || !['1', '2'].includes(message.trim())) {
+    return false;
+  }
+
+  if (player.id !== selectionCaptainId) {
+    announce(room, 'Only the replacement player can choose right now.', player.id);
+    return true;
+  }
+
+  const index = Number.parseInt(message.trim(), 10) - 1;
+  const selected = orderedPlayers(playersByTeam(room, Team.Spectator))[index];
+
+  if (!selected) {
+    announce(room, 'No spectator in that slot.');
+    return true;
+  }
+
+  setManagedTeam(room, selected.id, selectionTeam);
+  selectionSlots--;
+
+  if (selectionSlots <= 0 || playersByTeam(room, selectionTeam).length >= ACTIVE_PLAYERS_PER_TEAM) {
+    clearSelection();
+    startOrRestartGame(room, true);
+    return true;
+  }
+
+  setTimeout(() => announceSelectionChoices(room), 100);
+  return true;
+}
+
+function startInactivityMonitor(room: HaxballRoom): void {
+  if (INACTIVITY_LIMIT_MS <= 0) {
+    console.log('[Events] Inactivity kicking disabled');
+    return;
+  }
+
+  if (inactivityTimer) {
+    return;
+  }
+
+  inactivityTimer = setInterval(() => {
+    const now = Date.now();
+
+    for (const player of room.getPlayerList()) {
+      if (player.team === Team.Spectator) {
+        playerActivity.set(player.id, now);
+        continue;
+      }
+
+      const lastActive = playerActivity.get(player.id) ?? now;
+      playerActivity.set(player.id, lastActive);
+
+      if (now - lastActive >= INACTIVITY_LIMIT_MS) {
+        room.kickPlayer(player.id, 'Inactive for 1 minute.', false);
+      }
+    }
+  }, INACTIVITY_CHECK_MS);
 }
 
 /**
@@ -75,9 +511,19 @@ function updateAdmins(room: HaxballRoom): void {
  */
 export function setupEventHandlers(room: HaxballRoom): void {
   console.log('[Events] Setting up event handlers...');
+  clearAllPlayerAdmins(room);
 
   // Game lifecycle events
   room.onGameStart = (byPlayer) => {
+    pendingWinner = null;
+
+    if (!hasCompetitiveTeams(room)) {
+      startGame(false);
+      console.log('[Events] Solo warm-up started - live map enabled, analytics tracking disabled until both teams have players');
+      setTimeout(() => announce(room, SOLO_WARMUP_MESSAGE), 100);
+      return;
+    }
+
     const gameId = startGame();
     const event = createEvent('gameStart', gameId);
     if (byPlayer) {
@@ -88,6 +534,26 @@ export function setupEventHandlers(room: HaxballRoom): void {
   };
 
   room.onGameStop = (byPlayer) => {
+    if (!isTrackedGameActive()) {
+      if (!isResettingSoloGoal) {
+        console.log('[Events] Untracked warm-up stopped');
+      }
+      return;
+    }
+
+    if (!isAnalyticsGameActive()) {
+      if (!isResettingSoloGoal) {
+        console.log('[Events] Live warm-up stopped');
+      }
+      endGame();
+      return;
+    }
+
+    const scores = room.getScores();
+    if (scores && scores.red !== scores.blue) {
+      pendingWinner = scores.red > scores.blue ? Team.Red : Team.Blue;
+    }
+
     const event = createEvent('gameStop', getCurrentGameId());
     if (byPlayer) {
       event.playerId = byPlayer.id;
@@ -95,10 +561,32 @@ export function setupEventHandlers(room: HaxballRoom): void {
     }
     emitEvent(event);
     endGame();
+    setTimeout(() => handleGameRotation(room), 100);
   };
 
   // Goal events
   room.onTeamGoal = (team) => {
+    if (!hasCompetitiveTeams(room) || !isAnalyticsGameActive()) {
+      console.log('[Events] Solo warm-up goal ignored - resetting play');
+      announce(room, `Solo warm-up goal ignored. ${SOLO_WARMUP_MESSAGE}`);
+
+      if (!isResettingSoloGoal) {
+        isResettingSoloGoal = true;
+        setTimeout(() => {
+          if (room.getScores()) {
+            room.stopGame();
+          }
+          setTimeout(() => {
+            isResettingSoloGoal = false;
+            if (activePlayerCount(room) > 0 && !room.getScores()) {
+              room.startGame();
+            }
+          }, 200);
+        }, 100);
+      }
+      return;
+    }
+
     const event = createEvent('goal', getCurrentGameId());
     event.team = team;
     
@@ -120,10 +608,20 @@ export function setupEventHandlers(room: HaxballRoom): void {
     }
     
     emitEvent(event);
+
+    const scores = room.getScores();
+    if (scores && scores.scoreLimit > 0 && (scores.red >= scores.scoreLimit || scores.blue >= scores.scoreLimit)) {
+      pendingWinner = team;
+    }
   };
 
   // Player kick events (for shot/pass detection)
   room.onPlayerBallKick = (player) => {
+    markActive(player.id);
+    if (!hasCompetitiveTeams(room) || !isAnalyticsGameActive()) {
+      return;
+    }
+
     const event = createEvent('kick', getCurrentGameId());
     event.playerId = player.id;
     event.playerName = player.name;
@@ -180,6 +678,8 @@ export function setupEventHandlers(room: HaxballRoom): void {
 
   // Player join/leave events
   room.onPlayerJoin = (player) => {
+    playerJoinOrder.set(player.id, ++joinSequence);
+    markActive(player.id);
     const event = createEvent('join', getCurrentGameId());
     event.playerId = player.id;
     event.playerName = player.name;
@@ -187,12 +687,19 @@ export function setupEventHandlers(room: HaxballRoom): void {
     emitEvent(event);
     
     console.log(`[Events] Player joined: ${player.name} (ID: ${player.id})`);
-    
-    // Auto-assign admin if needed
-    updateAdmins(room);
+    if (room.getPlayerList().length === 1) {
+      announce(room, SOLO_WARMUP_MESSAGE, player.id);
+      setTimeout(() => announceDashboard(room, player.id), 5_000);
+    } else {
+      announceDashboard(room, player.id);
+    }
+    clearPlayerAdmin(room, player);
+    handleAutoJoin(room, player);
+    enforceActiveLimit(room);
   };
 
   room.onPlayerLeave = (player) => {
+    const oldTeam = player.team;
     const event = createEvent('leave', getCurrentGameId());
     event.playerId = player.id;
     event.playerName = player.name;
@@ -200,10 +707,46 @@ export function setupEventHandlers(room: HaxballRoom): void {
     emitEvent(event);
     
     console.log(`[Events] Player left: ${player.name} (ID: ${player.id})`);
-    
-    // Re-assign admin if the leaving player was admin
-    updateAdmins(room);
+    playerJoinOrder.delete(player.id);
+    playerActivity.delete(player.id);
+
+  if (player.id === selectionCaptainId) {
+      clearSelection();
+    }
+
+    if (oldTeam === Team.Red || oldTeam === Team.Blue) {
+      setTimeout(() => normalizeActiveTeams(room), 100);
+    } else if (selectionTeam != null) {
+      setTimeout(() => announceSelectionChoices(room), 100);
+    }
   };
+
+  room.onPlayerActivity = (player) => {
+    markActive(player.id);
+  };
+
+  room.onPlayerChat = (player, message) => {
+    markActive(player.id);
+    return !handleSelectionMessage(room, player, message);
+  };
+
+  room.onPlayerTeamChange = (changedPlayer) => {
+    markActive(changedPlayer.id);
+
+    if (!isManagingTeams && changedPlayer.team !== Team.Spectator) {
+      setManagedTeam(room, changedPlayer.id, Team.Spectator);
+      announce(room, 'Teams are managed automatically.', changedPlayer.id);
+      return;
+    }
+
+    enforceActiveLimit(room);
+  };
+
+  room.onPlayerAdminChange = (changedPlayer) => {
+    clearPlayerAdmin(room, changedPlayer);
+  };
+
+  startInactivityMonitor(room);
 
   console.log('[Events] Event handlers ready');
 }

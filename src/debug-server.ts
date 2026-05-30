@@ -36,6 +36,12 @@ const MAX_RECENT = 50;
 let statsInterval: ReturnType<typeof setInterval> | null = null;
 const STATS_BROADCAST_INTERVAL = 1000;
 
+function normalizeBasePath(value: string | undefined): string {
+  const raw = (value || '').trim();
+  if (!raw || raw === '/') return '';
+  return `/${raw.replace(/^\/+|\/+$/g, '')}`;
+}
+
 /**
  * Starts the debug server
  */
@@ -46,12 +52,14 @@ export function startDebugServer(config: DebugServerConfig): void {
   }
 
   const app = express();
+  const router = express.Router();
+  const basePath = normalizeBasePath(process.env.DASHBOARD_BASE_PATH);
 
   // Serve static files from public directory
-  app.use(express.static(path.join(process.cwd(), 'public')));
+  router.use(express.static(path.join(process.cwd(), 'public')));
 
   // API endpoint for recent data
-  app.get('/api/recent', (_req, res) => {
+  router.get('/api/recent', (_req, res) => {
     res.json({
       snapshots: recentSnapshots,
       events: recentEvents,
@@ -59,7 +67,7 @@ export function startDebugServer(config: DebugServerConfig): void {
   });
 
   // Health check endpoint
-  app.get('/api/health', (_req, res) => {
+  router.get('/api/health', (_req, res) => {
     res.json({
       status: 'ok',
       clients: clients.size,
@@ -68,10 +76,10 @@ export function startDebugServer(config: DebugServerConfig): void {
     });
   });
 
-  registerAnalyticsRoutes(app);
+  registerAnalyticsRoutes(router);
 
   // Heat map data endpoint
-  app.get('/api/heatmap', (_req, res) => {
+  router.get('/api/heatmap', (_req, res) => {
     const heatMapData = getHeatMapData();
     if (heatMapData) {
       res.json(heatMapData);
@@ -81,12 +89,12 @@ export function startDebugServer(config: DebugServerConfig): void {
   });
 
   // Heat map grid info endpoint
-  app.get('/api/heatmap/grid', (_req, res) => {
+  router.get('/api/heatmap/grid', (_req, res) => {
     res.json(getHeatMapGridInfo());
   });
 
   // Possession data endpoint
-  app.get('/api/possession', (_req, res) => {
+  router.get('/api/possession', (_req, res) => {
     const possessionData = getPossessionData();
     if (possessionData) {
       res.json(possessionData);
@@ -96,7 +104,7 @@ export function startDebugServer(config: DebugServerConfig): void {
   });
 
   // Distance data endpoint
-  app.get('/api/distance', (_req, res) => {
+  router.get('/api/distance', (_req, res) => {
     const distanceData = getDistanceData();
     if (distanceData) {
       res.json(distanceData);
@@ -106,7 +114,7 @@ export function startDebugServer(config: DebugServerConfig): void {
   });
 
   // Shots data endpoint
-  app.get('/api/shots', (_req, res) => {
+  router.get('/api/shots', (_req, res) => {
     const shotsData = getShotsData();
     if (shotsData) {
       res.json(shotsData);
@@ -116,7 +124,7 @@ export function startDebugServer(config: DebugServerConfig): void {
   });
 
   // Shots for visualization (simplified)
-  app.get('/api/shots/visualization', (_req, res) => {
+  router.get('/api/shots/visualization', (_req, res) => {
     const shots = getShotsForVisualization();
     if (shots) {
       res.json(shots);
@@ -126,7 +134,7 @@ export function startDebugServer(config: DebugServerConfig): void {
   });
 
   // All game stats endpoint
-  app.get('/api/stats', (_req, res) => {
+  router.get('/api/stats', (_req, res) => {
     const stats = getAllGameStats();
     if (stats) {
       res.json(stats);
@@ -134,6 +142,11 @@ export function startDebugServer(config: DebugServerConfig): void {
       res.json({ error: 'No active game', data: null });
     }
   });
+
+  if (basePath) {
+    app.get('/', (_req, res) => res.redirect(`${basePath}/live.html`));
+  }
+  app.use(basePath || '/', router);
 
   // Create HTTP server
   httpServer = http.createServer(app);
@@ -179,8 +192,8 @@ export function startDebugServer(config: DebugServerConfig): void {
   httpServer.listen(config.httpPort, () => {
     console.log(`[DebugServer] HTTP server running at http://localhost:${config.httpPort}`);
     console.log(`[DebugServer] WebSocket server running on same port`);
-    console.log(`[DebugServer] Debug dashboard: http://localhost:${config.httpPort}`);
-    console.log(`[DebugServer] Live dashboard: http://localhost:${config.httpPort}/live.html`);
+    console.log(`[DebugServer] Debug dashboard: http://localhost:${config.httpPort}${basePath || '/'}`);
+    console.log(`[DebugServer] Live dashboard: http://localhost:${config.httpPort}${basePath}/live.html`);
   });
 }
 

@@ -5,7 +5,7 @@
 
 import 'dotenv/config';
 import { createRoom, getRoomConfig } from './room';
-import { setupCollector, onSnapshot } from './collector';
+import { setupCollector, onSnapshot, isCurrentGameAnalyticsEnabled } from './collector';
 import { setupEventHandlers, onEvent } from './events';
 import { startBackupSession, backupSnapshot, backupEvent, closeBackupSession } from './backup';
 import { initPublisher, publishSnapshot, publishEvent, closePublisher } from './publisher';
@@ -60,9 +60,11 @@ async function main(): Promise<void> {
         );
       }
 
-      // Send to all outputs
-      backupSnapshot(snapshot);
-      publishSnapshot(snapshot);
+      // Warm-up snapshots feed the live map only; competitive snapshots also feed durable analytics.
+      if (isCurrentGameAnalyticsEnabled()) {
+        backupSnapshot(snapshot);
+        publishSnapshot(snapshot);
+      }
       broadcastSnapshot(snapshot);
     });
 

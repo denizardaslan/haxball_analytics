@@ -1,10 +1,10 @@
-import type { Express, Request, Response } from 'express';
+import type { Request, Response, Router } from 'express';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getAnalyticsRefreshStatus, triggerAnalyticsRefresh } from './analytics-refresh';
 
-const ENDPOINTS = new Set(['summary', 'players', 'matches', 'lineups', 'xg', 'heatmap', 'pipeline']);
+const ENDPOINTS = new Set(['summary', 'players', 'matches', 'lineups', 'xg', 'heatmap', 'pipeline', 'alltime']);
 
 function runAnalyticsQuery(endpoint: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -63,7 +63,9 @@ async function analyticsHandler(req: Request, res: Response): Promise<void> {
   }
 }
 
-export function registerAnalyticsRoutes(app: Express): void {
+type RouteRegistrar = Pick<Router, 'get' | 'post'>;
+
+export function registerAnalyticsRoutes(app: RouteRegistrar): void {
   app.get('/api/analytics/:endpoint', analyticsHandler);
   app.get('/api/analytics-refresh/status', (_req, res) => {
     res.json(getAnalyticsRefreshStatus());

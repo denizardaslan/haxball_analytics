@@ -55,4 +55,15 @@ SELECT
   ball.speedX AS ball_speed_x,
   ball.speedY AS ball_speed_y,
   players
-FROM read_json_auto('data/bruin_input/snapshots.jsonl')
+FROM read_json(
+  'data/bruin_input/snapshots.jsonl',
+  columns = {
+    gameId: 'VARCHAR',
+    timestamp: 'VARCHAR',
+    tickNumber: 'BIGINT',
+    gameTime: 'DOUBLE',
+    score: 'STRUCT(red BIGINT, blue BIGINT)',
+    ball: 'STRUCT(x DOUBLE, y DOUBLE, speedX DOUBLE, speedY DOUBLE)',
+    players: 'STRUCT(id BIGINT, name VARCHAR, team BIGINT, x DOUBLE, y DOUBLE, speedX DOUBLE, speedY DOUBLE)[]'
+  }
+)

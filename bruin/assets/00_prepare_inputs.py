@@ -4,6 +4,7 @@ type: python
 @bruin"""
 
 from pathlib import Path
+import os
 import shutil
 
 
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LIVE_DIR = ROOT / "data"
 SAMPLE_DIR = ROOT / "sample_data"
 TARGET_DIR = LIVE_DIR / "bruin_input"
+USE_SAMPLE_DATA = os.environ.get("USE_SAMPLE_DATA", "true").lower() == "true"
 
 
 def collect_jsonl(source_dir: Path, target_file: Path) -> int:
@@ -32,6 +34,8 @@ def collect_jsonl(source_dir: Path, target_file: Path) -> int:
 def source_for(kind: str) -> Path:
     live_source = LIVE_DIR / kind
     if live_source.exists() and any(live_source.glob("*.jsonl")):
+        return live_source
+    if not USE_SAMPLE_DATA:
         return live_source
     return SAMPLE_DIR / kind
 

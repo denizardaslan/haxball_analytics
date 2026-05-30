@@ -46,7 +46,6 @@ QUERIES = {
           impact_score
         FROM marts.player_rankings
         ORDER BY impact_score DESC, rank
-        LIMIT 50
     """,
     "matches": """
         SELECT
@@ -154,7 +153,47 @@ QUERIES = {
           profile
         FROM marts.xg_overperformance
         ORDER BY xg_overperformance DESC, goals DESC
-        LIMIT 50
+    """,
+    "alltime": """
+        WITH seen_players AS (
+          SELECT player_name
+          FROM staging.snapshot_players
+          WHERE player_name IS NOT NULL AND player_name <> ''
+          UNION
+          SELECT player_name
+          FROM raw.haxball_events
+          WHERE player_name IS NOT NULL AND player_name <> ''
+        ),
+        joined_players AS (
+          SELECT DISTINCT player_name
+          FROM raw.haxball_events
+          WHERE event_type = 'join'
+            AND player_name IS NOT NULL
+            AND player_name <> ''
+        )
+        SELECT
+          (SELECT count(*) FROM staging.game_results) AS tracked_games,
+          (SELECT count(*) FROM marts.player_rankings) AS ranked_players,
+          (SELECT count(*) FROM seen_players) AS players_seen_in_tracked_data,
+          (SELECT count(*) FROM joined_players) AS players_joined_during_tracked_sessions,
+          (SELECT count(*) FROM raw.haxball_events WHERE event_type = 'join') AS tracked_join_events,
+          (SELECT coalesce(round(sum(minutes_played), 1), 0) FROM marts.player_rankings) AS total_player_minutes,
+          (SELECT coalesce(round(sum(duration_seconds) / 60, 1), 0) FROM staging.game_results) AS total_match_minutes,
+          (SELECT coalesce(sum(goals), 0) FROM marts.player_rankings) AS total_goals,
+          (SELECT coalesce(sum(shots), 0) FROM marts.player_rankings) AS total_shots,
+          (SELECT coalesce(round(sum(total_xg), 2), 0) FROM marts.player_rankings) AS total_xg,
+          (SELECT count(*) FROM marts.team_match_summary) AS match_cards_available,
+          (SELECT count(*) FROM marts.xg_overperformance) AS finishing_profiles,
+          (SELECT count(*) FROM (
+            SELECT red_players AS lineup FROM marts.team_match_summary WHERE red_players IS NOT NULL AND red_players <> ''
+            UNION
+            SELECT blue_players AS lineup FROM marts.team_match_summary WHERE blue_players IS NOT NULL AND blue_players <> ''
+          ) unique_lineup_rows) AS unique_lineups,
+          (SELECT min(started_at) FROM staging.game_results) AS first_tracked_game_at,
+          (SELECT max(started_at) FROM staging.game_results) AS last_tracked_game_at,
+          (SELECT coalesce(round(avg(duration_seconds), 1), 0) FROM staging.game_results) AS avg_game_seconds,
+          (SELECT coalesce(max(goals), 0) FROM marts.player_rankings) AS top_player_goals,
+          (SELECT coalesce(max(total_xg), 0) FROM marts.player_rankings) AS top_player_xg
     """,
     "heatmap": """
         SELECT team, cell_x, cell_y, touches, intensity
