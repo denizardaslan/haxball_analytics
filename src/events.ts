@@ -247,8 +247,26 @@ function fillTeamFromSpectators(room: HaxballRoom, team: Team, targetSize: numbe
   return specs.length;
 }
 
+function ensureSoloPlayerStartsFromRed(room: HaxballRoom): boolean {
+  const red = playersByTeam(room, Team.Red);
+  const blue = playersByTeam(room, Team.Blue);
+
+  if (red.length === 0 && blue.length === 1) {
+    setManagedTeam(room, blue[0].id, Team.Red);
+    console.log(`[Events] Solo player ${blue[0].name} moved from blue to red for training kickoff`);
+    return true;
+  }
+
+  return false;
+}
+
 function normalizeActiveTeams(room: HaxballRoom, restartAfterFill = false): void {
   enforceActiveLimit(room);
+
+  if (ensureSoloPlayerStartsFromRed(room)) {
+    startOrRestartGame(room, true);
+    return;
+  }
 
   const red = playersByTeam(room, Team.Red);
   const blue = playersByTeam(room, Team.Blue);
