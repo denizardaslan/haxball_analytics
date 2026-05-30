@@ -6,7 +6,7 @@ Real-time football intelligence for a live Haxball room.
 
 Haxball Analytics turns a public multiplayer Haxball room into a live sports analytics system. A Node.js collector captures every match, a data pipeline validates and models the raw telemetry, DuckDB stores the analytics marts, and a custom dashboard shows live tactics, player rankings, xG, lineups, finishing profiles, and pipeline health.
 
-It also brings a Bruin-backed data analyst into the game itself. Players can ask questions in Haxball chat and get safe, read-only answers from the same DuckDB marts that power the dashboard.
+It also brings the Bruin AI data analyst into the game itself. Players can ask questions in Haxball chat and get safe, read-only answers from the same DuckDB marts that power the dashboard.
 
 ![Haxball Analytics live dashboard](docs/images/live-dashboard.png)
 
@@ -72,7 +72,7 @@ Dashboard tabs:
 
 ## In-Room Data Analyst
 
-Players can query the analytics warehouse without leaving the room. The chat command is powered by Bruin's data analyst workflow, but the experience feels native to the game: ask a football question, get a short answer back in chat.
+Players can query the analytics warehouse without leaving the room. The chat command uses the Bruin AI data analyst workflow, but the experience feels native to the game: ask a football question, get a short answer back in chat.
 
 ```text
 !bruin who are the top players right now?
