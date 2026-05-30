@@ -1,12 +1,12 @@
 # Haxball Analytics
 
-Bruin-powered real-time football intelligence for a live Haxball room.
+Real-time football intelligence for a live Haxball room.
 
 [Live dashboard](https://haxanalytics.denizaa.com/) | [Bruin](https://getbruin.com/) | [Haxball](https://www.haxball.com/)
 
-Haxball Analytics turns a public multiplayer Haxball room into a live sports analytics system. A Node.js collector captures every match, Bruin ingests and validates the raw telemetry, DuckDB stores the analytics marts, and a custom dashboard shows live tactics, player rankings, xG, lineups, finishing profiles, and pipeline health.
+Haxball Analytics turns a public multiplayer Haxball room into a live sports analytics system. A Node.js collector captures every match, a data pipeline validates and models the raw telemetry, DuckDB stores the analytics marts, and a custom dashboard shows live tactics, player rankings, xG, lineups, finishing profiles, and pipeline health.
 
-It also brings Bruin into the game itself: players can type `!bruin top players`, `!bruin xg`, or `!bruin pipeline` in Haxball chat and get safe, read-only answers from the Bruin-built DuckDB marts.
+It also brings a Bruin-backed data analyst into the game itself. Players can ask questions in Haxball chat and get safe, read-only answers from the same DuckDB marts that power the dashboard.
 
 ![Haxball Analytics live dashboard](docs/images/live-dashboard.png)
 
@@ -18,19 +18,19 @@ The room runs publicly, players join organically, and the project tracks the mat
 
 - ball position, speed, score, clock, goals, kicks, joins, leaves, and player movement;
 - xG estimates from shot location, angle, speed, direction, and goal probability;
-- raw JSONL event streams that Bruin turns into trusted analytical tables;
+- raw JSONL event streams that become trusted analytical tables;
 - dashboard tabs for live command, player quality, match analytics, lineup analytics, finishing, and pipeline health;
-- an in-room Bruin analyst that answers questions from the same governed data layer.
+- an in-room data analyst that answers questions from the same governed data layer.
 
-## Bruin Competition Highlights
+## Analytics Pipeline
 
-This project uses Bruin for the full analytics lifecycle:
+The project uses Bruin where it belongs: as the pipeline engine for the analytics lifecycle.
 
-- **Ingestion**: Bruin reads live Haxball JSONL snapshots and event logs into DuckDB raw tables.
+- **Ingestion**: live Haxball JSONL snapshots and event logs are loaded into DuckDB raw tables.
 - **Transformation**: SQL assets build staging tables, shot detection, game results, player game stats, rankings, lineups, heatmaps, xG profiles, and freshness marts.
-- **Orchestration**: the Bruin pipeline runs locally and on the VPS to refresh production analytics.
-- **Analysis**: dashboard views and the in-room `!bruin` analyst query Bruin-generated marts.
-- **Quality**: Bruin checks validate event IDs, accepted event types, team values, xG ranges, field coordinates, snapshot gaps, final-score consistency, and uniqueness constraints.
+- **Orchestration**: scheduled runs refresh production analytics on the VPS.
+- **Analysis**: dashboard views and the in-room analyst query curated marts.
+- **Quality**: pipeline checks validate event IDs, accepted event types, team values, xG ranges, field coordinates, snapshot gaps, final-score consistency, and uniqueness constraints.
 
 ![Haxball Analytics architecture](docs/images/architecture.png)
 
@@ -41,7 +41,7 @@ flowchart LR
   A["Public Haxball Room"] --> B["TypeScript Collector"]
   B --> C["JSONL Snapshots"]
   B --> D["JSONL Events"]
-  C --> E["Bruin prepare_inputs"]
+  C --> E["prepare_inputs"]
   D --> E
   E --> F["raw.haxball_snapshots"]
   E --> G["raw.haxball_events"]
@@ -55,7 +55,7 @@ flowchart LR
   K --> M["marts.player_rankings"]
   M --> N["Dashboard"]
   L --> N
-  M --> O["!bruin Chat Analyst"]
+  M --> O["In-room Analyst"]
   L --> O
 ```
 
@@ -68,23 +68,22 @@ Dashboard tabs:
 - **Match Analytics**: recent match history with score, xG winner, favorites, and lineups.
 - **Lineup Analytics**: roster strength, repeated lineups, and team combinations.
 - **Finishing**: xG overperformance, finishing profile, shots, goals, and conversion.
-- **Pipeline**: all-time production statistics and Bruin freshness metrics.
+- **Pipeline**: all-time production statistics and freshness metrics.
 
-## In-Room Bruin Analyst
+## In-Room Data Analyst
 
-Players can query the analytics warehouse without leaving the room.
+Players can query the analytics warehouse without leaving the room. The chat command is powered by Bruin's data analyst workflow, but the experience feels native to the game: ask a football question, get a short answer back in chat.
 
 ```text
-!bruin top players
-!bruin xg
-!bruin last match
-!bruin upsets
-!bruin lineups
-!bruin heatmap
-!bruin pipeline
+!bruin who are the top players right now?
+!bruin which player is most clinical against xG?
+!bruin what happened in the latest match?
+!bruin were there any xG upsets?
+!bruin which lineup has performed best?
+!bruin is the data pipeline fresh?
 ```
 
-The command is intentionally safe. Player text is classified into predefined intents, each intent maps to hardcoded read-only SQL, and the query is executed through `bruin query` against the DuckDB marts. Free-form SQL is not accepted from users.
+The command is intentionally safe. Player text is classified into predefined intents, each intent maps to hardcoded read-only SQL, and the query is executed against the DuckDB marts. Free-form SQL is not accepted from users.
 
 ![In-room Bruin analyst answering a Haxball chat question](docs/images/bruin-chat-analyst.png)
 
@@ -130,11 +129,11 @@ flowchart TD
   M2 --> M6
 ```
 
-## Bruin Assets
+## Data Assets
 
 | Layer | Asset | Purpose |
 | --- | --- | --- |
-| Prepare | `haxball.prepare_inputs` | Chooses live data when available, otherwise sample data. Produces Bruin input JSONL files. |
+| Prepare | `haxball.prepare_inputs` | Chooses live data when available, otherwise sample data. Produces analytics-ready JSONL files. |
 | Raw | `raw.haxball_snapshots` | Ingests position, score, ball, and player snapshots. |
 | Raw | `raw.haxball_events` | Ingests goals, kicks, joins, leaves, game starts, and game stops. |
 | Staging | `staging.snapshot_players` | Explodes player arrays into one row per player snapshot. |
@@ -149,7 +148,7 @@ flowchart TD
 
 ## Quality Checks
 
-Bruin checks are part of the product contract, not an afterthought:
+Data quality checks are part of the product contract, not an afterthought:
 
 - event IDs are unique and non-null;
 - game IDs and player names are present where required;
@@ -161,26 +160,26 @@ Bruin checks are part of the product contract, not an afterthought:
 - final score matches recorded goal events;
 - mart keys such as `player_name` and `game_id` remain unique where needed.
 
-![Bruin validation passing](docs/images/bruin-validate.png)
+![Pipeline validation passing](docs/images/bruin-validate.png)
 
 ## Production Behavior
 
 The live VPS runs two loops:
 
 - the Haxball room process writes snapshots/events and serves the real-time dashboard;
-- a scheduled Bruin run refreshes DuckDB marts for dashboard history and chat analysis.
+- a scheduled pipeline run refreshes DuckDB marts for dashboard history and chat analysis.
 
 Solo play is treated as warm-up. If only one player is in the room, the system switches to a training stadium, pauses stat persistence, and tells players that at least two players are needed. This protects production stats from test data while still showing the solo player on the live tactical map.
 
 ## Security Notes
 
-The in-room Bruin analyst is designed to be safe for public chat:
+The in-room data analyst is designed to be safe for public chat:
 
 - users cannot submit SQL directly;
 - text is mapped to a small set of supported intents;
 - every intent uses hardcoded `SELECT`/`WITH` SQL;
 - mutation keywords such as `delete`, `drop`, `alter`, `insert`, and `update` are blocked;
-- `bruin query` is executed with `spawn()` args, not shell string interpolation;
+- analyst queries are executed with `spawn()` args, not shell string interpolation;
 - answers are rate-limited and time-limited.
 
 ## Quick Start
