@@ -65,18 +65,6 @@ flowchart LR
 
 ## What The Dashboard Shows
 
-> `<image>`
-> Live tactical map screenshot needed: show one or more players on the pitch, ball trail enabled, score/xG cards visible. Save as `docs/images/live-tactical-map.png`.
-> `</image>`
-
-> `<image>`
-> Player quality screenshot needed: show ranked players table with impact score, goals, xG, win rate, and minutes. Save as `docs/images/player-quality.png`.
-> `</image>`
-
-> `<image>`
-> Pipeline screenshot needed: show all-time stats with tracked games, ranked players, players seen, total player minutes, total goals, xG, event rows, snapshot rows, and readable dates. Save as `docs/images/pipeline-health.png`.
-> `</image>`
-
 Dashboard tabs:
 
 - **Live Command**: WebSocket-powered tactical map, score, xG, tempo, ball trail, and live room connection.
@@ -179,9 +167,7 @@ Bruin checks are part of the product contract, not an afterthought:
 - final score matches recorded goal events;
 - mart keys such as `player_name` and `game_id` remain unique where needed.
 
-> `<image>`
-> Bruin validation screenshot needed: terminal or Bruin UI showing `bruin validate bruin` passing. Save as `docs/images/bruin-validate.png`.
-> `</image>`
+![Bruin validation passing](docs/images/bruin-validate.png)
 
 ## Production Behavior
 
@@ -274,10 +260,6 @@ Place final assets in `docs/images/`:
 
 - `hero-live-dashboard.png`
 - `architecture.png`
-- `live-tactical-map.png`
-- `player-quality.png`
-- `pipeline-health.png`
 - `bruin-chat-analyst.png`
-- `bruin-validate.png`
 
 After the screenshots are added, replace each `<image>` block above with normal Markdown image syntax.
