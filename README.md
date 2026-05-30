@@ -8,9 +8,7 @@ Haxball Analytics turns a public multiplayer Haxball room into a live sports ana
 
 It also brings Bruin into the game itself: players can type `!bruin top players`, `!bruin xg`, or `!bruin pipeline` in Haxball chat and get safe, read-only answers from the Bruin-built DuckDB marts.
 
-> `<image>`
-> Hero screenshot needed: wide browser screenshot of https://haxanalytics.denizaa.com/ showing the live tactical map, score cards, Bruin badge, and dark dashboard design. Save as `docs/images/hero-live-dashboard.png` and replace this block with the image.
-> `</image>`
+![Haxball Analytics live dashboard](docs/images/live-dashboard.png)
 
 ## Why It Exists
 
@@ -34,9 +32,7 @@ This project uses Bruin for the full analytics lifecycle:
 - **Analysis**: dashboard views and the in-room `!bruin` analyst query Bruin-generated marts.
 - **Quality**: Bruin checks validate event IDs, accepted event types, team values, xG ranges, field coordinates, snapshot gaps, final-score consistency, and uniqueness constraints.
 
-> `<image>`
-> Technical architecture visual needed: polished diagram showing Haxball room -> TypeScript collector -> JSONL snapshots/events -> Bruin pipeline -> DuckDB marts -> dashboard and in-room Bruin analyst. Save as `docs/images/architecture.png` and replace this block.
-> `</image>`
+![Haxball Analytics architecture](docs/images/architecture.png)
 
 ## Live Architecture
 
@@ -90,9 +86,7 @@ Players can query the analytics warehouse without leaving the room.
 
 The command is intentionally safe. Player text is classified into predefined intents, each intent maps to hardcoded read-only SQL, and the query is executed through `bruin query` against the DuckDB marts. Free-form SQL is not accepted from users.
 
-> `<image>`
-> Bruin AI analyst screenshot needed: Haxball chat showing a player typing a `!bruin` question, then a red Bruin Analyst answer from DuckDB marts. Save as `docs/images/bruin-chat-analyst.png`.
-> `</image>`
+![In-room Bruin analyst answering a Haxball chat question](docs/images/bruin-chat-analyst.png)
 
 ## Data Model
 
@@ -254,12 +248,6 @@ export HAXBALL_VPS_RESTART_COMMAND="pm2 restart haxball-analytics"
 - Vanilla HTML/CSS/JS dashboard
 - PM2 and cron on VPS production
 
-## Visual Assets To Add
+## Visual Assets
 
-Place final assets in `docs/images/`:
-
-- `hero-live-dashboard.png`
-- `architecture.png`
-- `bruin-chat-analyst.png`
-
-After the screenshots are added, replace each `<image>` block above with normal Markdown image syntax.
+README visuals live in `docs/images/`.
