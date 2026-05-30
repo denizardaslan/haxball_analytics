@@ -6,7 +6,7 @@ Real-time football intelligence for a live Haxball room.
 
 Haxball Analytics turns a public multiplayer Haxball room into a live sports analytics system. A Node.js collector captures every match, a data pipeline validates and models the raw telemetry, DuckDB stores the analytics marts, and a custom dashboard shows live tactics, player rankings, xG, lineups, finishing profiles, and pipeline health.
 
-It also brings the Bruin AI data analyst into the game itself. Players can ask questions in Haxball chat and get safe, read-only answers from the same DuckDB marts that power the dashboard.
+It also brings lightweight analytics answers into the game itself. Players can ask supported questions in Haxball chat and get safe, read-only answers from the same DuckDB marts that power the dashboard.
 
 ![Haxball Analytics live gameplay and dashboard](docs/images/hax.gif)
 
@@ -20,7 +20,7 @@ The room runs publicly, players join organically, and the project tracks the mat
 - xG estimates from shot location, angle, speed, direction, and goal probability;
 - raw JSONL event streams that become trusted analytical tables;
 - dashboard tabs for live command, player quality, match analytics, lineup analytics, finishing, and pipeline health;
-- an in-room data analyst that answers questions from the same governed data layer.
+- an in-room analytics assistant that answers supported questions from the same governed data layer.
 
 ## Analytics Pipeline
 
@@ -29,7 +29,7 @@ The project uses Bruin where it belongs: as the pipeline engine for the analytic
 - **Ingestion**: live Haxball JSONL snapshots and event logs are loaded into DuckDB raw tables.
 - **Transformation**: SQL assets build staging tables, shot detection, game results, player game stats, rankings, lineups, heatmaps, xG profiles, and freshness marts.
 - **Orchestration**: scheduled runs refresh production analytics on the VPS.
-- **Analysis**: dashboard views and the in-room analyst query curated marts.
+- **Analysis**: dashboard views and in-room commands query curated marts.
 - **Quality**: pipeline checks validate event IDs, accepted event types, team values, xG ranges, field coordinates, snapshot gaps, final-score consistency, and uniqueness constraints.
 
 ![Haxball Analytics architecture](docs/images/architecture.png)
@@ -55,7 +55,7 @@ flowchart LR
   K --> M["marts.player_rankings"]
   M --> N["Dashboard"]
   L --> N
-  M --> O["In-room Analyst"]
+  M --> O["In-room Assistant"]
   L --> O
 ```
 
@@ -70,9 +70,9 @@ Dashboard tabs:
 - **Finishing**: xG overperformance, finishing profile, shots, goals, and conversion.
 - **Pipeline**: all-time production statistics and freshness metrics.
 
-## In-Room Data Analyst
+## In-Room Analytics Assistant
 
-Players can query the analytics warehouse without leaving the room. The chat command uses the Bruin AI data analyst workflow, but the experience feels native to the game: ask a football question, get a short answer back in chat.
+Players can query the analytics warehouse without leaving the room. The `!bruin` command maps supported football questions to predefined read-only SQL, runs them through the Bruin CLI against DuckDB, and returns a short answer in chat.
 
 ```text
 !bruin who are the top players right now?
@@ -85,7 +85,7 @@ Players can query the analytics warehouse without leaving the room. The chat com
 
 The command is intentionally safe. Player text is classified into predefined intents, each intent maps to hardcoded read-only SQL, and the query is executed against the DuckDB marts. Free-form SQL is not accepted from users.
 
-![In-room Bruin analyst answering a Haxball chat question](docs/images/bruin-chat-analyst.png)
+![In-room analytics assistant answering a Haxball chat question](docs/images/bruin-chat-analyst.png)
 
 ## Data Model
 
@@ -173,13 +173,13 @@ Solo play is treated as warm-up. If only one player is in the room, the system s
 
 ## Security Notes
 
-The in-room data analyst is designed to be safe for public chat:
+The in-room analytics assistant is designed to be safe for public chat:
 
 - users cannot submit SQL directly;
 - text is mapped to a small set of supported intents;
 - every intent uses hardcoded `SELECT`/`WITH` SQL;
 - mutation keywords such as `delete`, `drop`, `alter`, `insert`, and `update` are blocked;
-- analyst queries are executed with `spawn()` args, not shell string interpolation;
+- assistant queries are executed with `spawn()` args, not shell string interpolation;
 - answers are rate-limited and time-limited.
 
 ## Quick Start
