@@ -127,6 +127,32 @@
       white-space: nowrap;
     }
     .bruin-copy strong { color: var(--text); font-size: 11px; letter-spacing: 0.04em; }
+    .room-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 8px 12px;
+      border: 1px solid rgba(82, 209, 143, 0.62);
+      border-radius: 7px;
+      background: linear-gradient(180deg, rgba(82, 209, 143, 0.20), rgba(82, 209, 143, 0.08));
+      color: var(--text);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 950;
+      white-space: nowrap;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 22px rgba(82, 209, 143, 0.10);
+    }
+    .room-link::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 16px var(--green);
+      flex: 0 0 auto;
+    }
+    .room-link:hover { border-color: rgba(82, 209, 143, 0.9); background: rgba(82, 209, 143, 0.18); }
     .status, .pill {
       display: inline-flex;
       align-items: center;
@@ -275,6 +301,7 @@
       </div>
     </div>
     <div class="header-right">
+      <a class="room-link" href="https://www.haxball.com/play?c=9_6OgRkyYbQ" target="_blank" rel="noopener noreferrer">Join Room</a>
       <a class="bruin-badge" href="https://getbruin.com/" target="_blank" rel="noopener noreferrer" title="Powered by Bruin">
         <span class="bruin-copy">Powered by</span>
         <img id="bruinLogo" src="bruin-logo-2025.svg" alt="Bruin">
