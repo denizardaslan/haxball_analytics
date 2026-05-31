@@ -3,10 +3,10 @@
  *
  * Detects and tracks shots on goal with xG values.
  *
- * A "shot" is a kick where:
- * 1. Ball is moving toward opponent's goal (x direction)
- * 2. Ball trajectory would pass through goal line
- * 3. Ball speed exceeds threshold
+ * A "shot" is a kick where the ball is moving toward the opponent goal with
+ * enough speed and a plausible goal-mouth trajectory. Haxball long shots can
+ * start from the player's own half, so the detector does not require attacking
+ * half possession.
  */
 
 import { randomUUID } from 'crypto';
@@ -20,10 +20,99 @@ const GOAL_Y_MIN = -64;
 const GOAL_Y_MAX = 64;
 
 // Shot detection constants
-const MIN_SHOT_SPEED = 6; // Minimum ball speed to be considered a shot
-const SHOT_DIRECTION_THRESHOLD = 0.4; // Minimum x-velocity component ratio
-const MAX_SHOT_DISTANCE = 260;
-const GOAL_TRAJECTORY_MARGIN = 42;
+const MIN_SHOT_SPEED = 4.5; // Minimum ball speed to be considered a shot
+const CLOSE_RANGE_MIN_SHOT_SPEED = 3.2;
+const SHOT_DIRECTION_THRESHOLD = 0.25; // Minimum x-velocity component ratio
+const CLOSE_RANGE_DIRECTION_THRESHOLD = 0.12;
+const MAX_SHOT_DISTANCE = 780;
+const CLOSE_RANGE_DISTANCE = 175;
+const GOAL_TRAJECTORY_MARGIN = 56;
+const MAX_DYNAMIC_TRAJECTORY_MARGIN = 72;
+const RECENT_KICK_WINDOW_MS = 8000;
+const RECENT_KICK_LIMIT = 30;
+
+type PlayerContext = { id: number; name: string; team: number; x: number; y: number };
+
+interface RecentKick {
+  event: GameEvent;
+  players: PlayerContext[];
+}
+
+function getTargetGoalX(team: number): number {
+  return team === 1 ? BLUE_GOAL_X : RED_GOAL_X;
+}
+
+function getTotalSpeed(speedX: number, speedY: number): number {
+  return Math.sqrt(speedX * speedX + speedY * speedY);
+}
+
+function isMovingTowardGoal(speedX: number, team: number): boolean {
+  return (team === 1 && speedX > 0) || (team === 2 && speedX < 0);
+}
+
+function getProjectedGoalY(ballX: number, ballY: number, speedX: number, speedY: number, targetGoalX: number): number | null {
+  if (speedX === 0) {
+    return null;
+  }
+
+  const timeToGoal = (targetGoalX - ballX) / speedX;
+  if (timeToGoal <= 0) {
+    return null;
+  }
+
+  return ballY + speedY * timeToGoal;
+}
+
+function getTrajectoryMargin(distanceToGoal: number): number {
+  return GOAL_TRAJECTORY_MARGIN + Math.min(MAX_DYNAMIC_TRAJECTORY_MARGIN, distanceToGoal * 0.08);
+}
+
+function isProjectedNearGoal(projectedY: number | null, distanceToGoal: number): boolean {
+  if (projectedY === null) {
+    return false;
+  }
+
+  const margin = getTrajectoryMargin(distanceToGoal);
+  return projectedY >= GOAL_Y_MIN - margin && projectedY <= GOAL_Y_MAX + margin;
+}
+
+function isDangerousGoalwardKick(
+  ballX: number,
+  ballY: number,
+  speedX: number,
+  speedY: number,
+  team: number,
+  minSpeed: number
+): boolean {
+  const totalSpeed = getTotalSpeed(speedX, speedY);
+  if (totalSpeed < minSpeed || !isMovingTowardGoal(speedX, team)) {
+    return false;
+  }
+
+  const targetGoalX = getTargetGoalX(team);
+  const distanceToGoal = Math.abs(targetGoalX - ballX);
+  if (distanceToGoal > MAX_SHOT_DISTANCE) {
+    return false;
+  }
+
+  const xRatio = Math.abs(speedX) / totalSpeed;
+  const directionThreshold = distanceToGoal <= CLOSE_RANGE_DISTANCE
+    ? CLOSE_RANGE_DIRECTION_THRESHOLD
+    : SHOT_DIRECTION_THRESHOLD;
+
+  if (xRatio < directionThreshold) {
+    return false;
+  }
+
+  const projectedY = getProjectedGoalY(ballX, ballY, speedX, speedY, targetGoalX);
+  if (isProjectedNearGoal(projectedY, distanceToGoal)) {
+    return true;
+  }
+
+  // Close-range rebounds and angled touches often do not project neatly through
+  // the exact goal mouth, but they are still genuine Haxball chances.
+  return distanceToGoal <= CLOSE_RANGE_DISTANCE && Math.abs(ballY) <= GOAL_Y_MAX + getTrajectoryMargin(distanceToGoal);
+}
 
 export type ShotResult = 'goal' | 'miss' | 'save' | 'pending';
 
@@ -72,58 +161,11 @@ function isLikelyShot(
   speedY: number,
   team: number
 ): boolean {
-  // Calculate total speed
-  const totalSpeed = Math.sqrt(speedX * speedX + speedY * speedY);
-
-  // Must have minimum speed
-  if (totalSpeed < MIN_SHOT_SPEED) {
-    return false;
-  }
-
-  // A shot has to start in the opponent half. This filters build-up touches,
-  // clearances, and sideways kicks that happen far away from goal.
-  if (team === 1 && ballX < 0) {
-    return false;
-  }
-  if (team === 2 && ballX > 0) {
-    return false;
-  }
-
-  // Determine target goal based on team
-  const targetGoalX = team === 1 ? BLUE_GOAL_X : RED_GOAL_X;
+  const targetGoalX = getTargetGoalX(team);
   const distanceToGoal = Math.abs(targetGoalX - ballX);
+  const minSpeed = distanceToGoal <= CLOSE_RANGE_DISTANCE ? CLOSE_RANGE_MIN_SHOT_SPEED : MIN_SHOT_SPEED;
 
-  if (distanceToGoal > MAX_SHOT_DISTANCE) {
-    return false;
-  }
-
-  // Ball must be moving toward the goal
-  if (team === 1 && speedX <= 0) {
-    return false; // Red team must shoot right (positive X)
-  }
-  if (team === 2 && speedX >= 0) {
-    return false; // Blue team must shoot left (negative X)
-  }
-
-  // Check if x-velocity is significant portion of total velocity
-  const xRatio = Math.abs(speedX) / totalSpeed;
-  if (xRatio < SHOT_DIRECTION_THRESHOLD) {
-    return false;
-  }
-
-  // Project where ball would cross goal line
-  if (speedX !== 0) {
-    const timeToGoal = (targetGoalX - ballX) / speedX;
-    if (timeToGoal > 0) {
-      const projectedY = ballY + speedY * timeToGoal;
-      // Check if it would be within goal height (with some margin)
-      if (projectedY >= GOAL_Y_MIN - GOAL_TRAJECTORY_MARGIN && projectedY <= GOAL_Y_MAX + GOAL_TRAJECTORY_MARGIN) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return isDangerousGoalwardKick(ballX, ballY, speedX, speedY, team, minSpeed);
 }
 
 /**
@@ -134,6 +176,7 @@ export class ShotTracker {
   private gameId: string;
   private shots: Shot[] = [];
   private pendingShots: Map<string, Shot> = new Map(); // Shots waiting for result
+  private recentKicks: RecentKick[] = [];
   private lastUpdate: string;
 
   constructor(gameId: string) {
@@ -144,7 +187,26 @@ export class ShotTracker {
   /**
    * Process a kick event and determine if it's a shot
    */
-  processKick(event: GameEvent, players: Array<{ id: number; name: string; team: number; x: number; y: number }>): Shot | null {
+  private rememberKick(event: GameEvent, players: PlayerContext[]): void {
+    this.recentKicks.push({
+      event: {
+        ...event,
+        position: event.position ? { ...event.position } : undefined,
+        ballPosition: event.ballPosition ? { ...event.ballPosition } : undefined,
+        ballSpeed: event.ballSpeed ? { ...event.ballSpeed } : undefined,
+        metadata: event.metadata ? { ...event.metadata } : undefined,
+      },
+      players: players.map((player) => ({ ...player })),
+    });
+
+    const eventTime = Date.parse(event.timestamp);
+    const cutoff = Number.isFinite(eventTime) ? eventTime - RECENT_KICK_WINDOW_MS : Date.now() - RECENT_KICK_WINDOW_MS;
+    this.recentKicks = this.recentKicks
+      .filter((kick) => Date.parse(kick.event.timestamp) >= cutoff)
+      .slice(-RECENT_KICK_LIMIT);
+  }
+
+  private createShot(event: GameEvent, players: PlayerContext[], result: ShotResult = 'pending', goalTimestamp?: string): Shot | null {
     if (!event.ballPosition || !event.team || event.team === 0) {
       return null;
     }
@@ -154,12 +216,6 @@ export class ShotTracker {
     const speedX = event.ballSpeed?.speedX || 0;
     const speedY = event.ballSpeed?.speedY || 0;
 
-    // Check if this is likely a shot
-    if (!isLikelyShot(ballX, ballY, speedX, speedY, event.team)) {
-      return null;
-    }
-
-    // Calculate xG for this shot
     const xgResult = calculateXG(
       { x: ballX, y: ballY },
       event.team,
@@ -186,11 +242,14 @@ export class ShotTracker {
       ballSpeed: { speedX, speedY },
       xg: xgResult.xg,
       xgDetails: xgResult,
-      result: 'pending',
+      result,
+      goalTimestamp,
     };
 
     this.shots.push(shot);
-    this.pendingShots.set(shot.shotId, shot);
+    if (shot.result === 'pending') {
+      this.pendingShots.set(shot.shotId, shot);
+    }
     this.lastUpdate = event.timestamp;
 
     console.log(
@@ -201,17 +260,64 @@ export class ShotTracker {
     return shot;
   }
 
+  processKick(event: GameEvent, players: PlayerContext[]): Shot | null {
+    this.rememberKick(event, players);
+
+    if (!event.ballPosition || !event.team || event.team === 0) {
+      return null;
+    }
+
+    const ballX = event.ballPosition.x;
+    const ballY = event.ballPosition.y;
+    const speedX = event.ballSpeed?.speedX || 0;
+    const speedY = event.ballSpeed?.speedY || 0;
+
+    if (!isLikelyShot(ballX, ballY, speedX, speedY, event.team)) {
+      return null;
+    }
+
+    return this.createShot(event, players);
+  }
+
+  private findFallbackGoalShot(scoringTeam: number, timestamp: string): RecentKick | null {
+    const goalTime = Date.parse(timestamp);
+    const candidates = this.recentKicks.filter((kick) => {
+      const event = kick.event;
+      if (event.team !== scoringTeam || !event.ballPosition) {
+        return false;
+      }
+
+      const ageMs = goalTime - Date.parse(event.timestamp);
+      if (ageMs < 0 || ageMs > RECENT_KICK_WINDOW_MS) {
+        return false;
+      }
+
+      return isDangerousGoalwardKick(
+        event.ballPosition.x,
+        event.ballPosition.y,
+        event.ballSpeed?.speedX || 0,
+        event.ballSpeed?.speedY || 0,
+        event.team,
+        CLOSE_RANGE_MIN_SHOT_SPEED
+      );
+    });
+
+    return candidates.at(-1) || null;
+  }
+
   /**
    * Process a goal event and update pending shots
    * Returns the scorer info if found from a tracked shot
    */
   processGoal(scoringTeam: number, timestamp: string): { playerId: number; playerName: string; xg: number } | null {
     // Find the most recent pending shot from the scoring team
+    const goalTime = Date.parse(timestamp);
     let mostRecentShot: Shot | null = null;
     let mostRecentTime = '';
 
     for (const shot of this.pendingShots.values()) {
-      if (shot.team === scoringTeam && shot.timestamp > mostRecentTime) {
+      const ageMs = goalTime - Date.parse(shot.timestamp);
+      if (ageMs >= 0 && ageMs <= RECENT_KICK_WINDOW_MS && shot.team === scoringTeam && shot.timestamp > mostRecentTime) {
         mostRecentShot = shot;
         mostRecentTime = shot.timestamp;
       }
@@ -233,6 +339,24 @@ export class ShotTracker {
       console.log(
         `[Shots] Goal! Shot by ${mostRecentShot.playerName} resulted in goal (xG=${mostRecentShot.xg.toFixed(3)})`
       );
+    } else {
+      const fallbackKick = this.findFallbackGoalShot(scoringTeam, timestamp);
+      const fallbackShot = fallbackKick
+        ? this.createShot(fallbackKick.event, fallbackKick.players, 'goal', timestamp)
+        : null;
+
+      if (fallbackShot) {
+        scorerInfo = {
+          playerId: fallbackShot.playerId,
+          playerName: fallbackShot.playerName,
+          xg: fallbackShot.xg,
+        };
+
+        console.log(
+          `[Shots] Goal recovered from recent kick by ${fallbackShot.playerName} ` +
+          `(xG=${fallbackShot.xg.toFixed(3)})`
+        );
+      }
     }
 
     // Mark other pending shots as misses (they didn't result in goal)
@@ -301,6 +425,7 @@ export class ShotTracker {
   reset(): void {
     this.shots = [];
     this.pendingShots.clear();
+    this.recentKicks = [];
     this.lastUpdate = new Date().toISOString();
   }
 }

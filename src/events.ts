@@ -729,8 +729,9 @@ export function setupEventHandlers(room: HaxballRoom): void {
       };
     }
     
-    // Shot detection is stricter than raw kick tracking. Only kicks that are
-    // close to the opponent goal and traveling goalward get xG attached.
+    // Shot detection keeps raw kick tracking separate from goalward chances.
+    // Long Haxball shots can start from either half, so the shot tracker also
+    // keeps recent dangerous kicks for goal recovery.
     if (ballPos && player.team) {
       try {
         const currentPlayers = getCurrentPlayers();
