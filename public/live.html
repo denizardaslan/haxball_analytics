@@ -242,6 +242,28 @@
     .shot-result { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 900; }
     .shot-result.goal { color: var(--green); }
     .empty { color: var(--faint); padding: 22px; text-align: center; }
+    .demo-notice {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      border: 1px solid rgba(245, 201, 95, 0.52);
+      border-radius: 7px;
+      padding: 10px 12px;
+      background: linear-gradient(90deg, rgba(245,201,95,0.14), rgba(94,231,255,0.07));
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 850;
+    }
+    .demo-notice.visible { display: flex; }
+    .demo-notice span {
+      color: var(--yellow);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
 
     .table-wrap { overflow: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 780px; }
@@ -322,6 +344,7 @@
 
   <main>
     <section id="live" class="view active">
+      <div id="demoNotice" class="demo-notice"><span>Replay mode</span> Room is empty, so a recorded match replay is showing. Live data will appear automatically when players join.</div>
       <div class="kpi-grid">
         <div class="panel"><div class="metric-label">Score</div><div id="scoreMetric" class="metric-value">0 - 0</div><div class="metric-sub">current match</div></div>
         <div class="panel"><div class="metric-label">Clock</div><div id="timeMetric" class="metric-value">0:00</div><div class="metric-sub">game time</div></div>
@@ -385,6 +408,11 @@
       events: [],
       ballTrail: [],
       xgRace: [],
+      demoRace: [],
+      demoData: null,
+      lastSnapshotAt: 0,
+      demoStartedAt: Date.now(),
+      lastDemoOffset: 0,
       layers: { players: true, shots: true, trail: true },
       api: { summary: null, players: [], matches: [], lineups: [], xg: [], pipeline: {}, alltime: null, refreshStatus: null },
     };
@@ -424,8 +452,110 @@
     function n(value, digits = 2) { return Number(value || 0).toFixed(digits); }
     function pct(value) { return `${Math.round(Number(value || 0))}%`; }
 
+    function shouldShowDemo() {
+      const realPlayers = state.latestSnapshot?.players || [];
+      const staleSnapshot = !state.lastSnapshotAt || Date.now() - state.lastSnapshotAt > 10000;
+      return !state.latestSnapshot || staleSnapshot || realPlayers.length === 0;
+    }
+
+    function demoOffsetMs(item) {
+      if (!state.demoData?.startedAt || !item?.timestamp) return 0;
+      return Date.parse(item.timestamp) - Date.parse(state.demoData.startedAt);
+    }
+
+    function demoElapsedMs() {
+      const duration = state.demoData?.durationMs || 0;
+      if (!duration) return 0;
+      return (Date.now() - state.demoStartedAt) % duration;
+    }
+
+    function demoSnapshotIndex() {
+      const snapshots = state.demoData?.snapshots || [];
+      const elapsed = demoElapsedMs();
+      let index = 0;
+      for (let i = 0; i < snapshots.length; i++) {
+        if (demoOffsetMs(snapshots[i]) <= elapsed) index = i;
+        else break;
+      }
+      return index;
+    }
+
+    function demoEvents() {
+      if (!state.demoData) return [];
+      const elapsed = demoElapsedMs();
+      return (state.demoData.events || []).filter((event) => demoOffsetMs(event) <= elapsed);
+    }
+
+    function makeReplayStats() {
+      const visibleEvents = demoEvents();
+      const shots = [];
+      const goals = { red: 0, blue: 0 };
+      for (const event of visibleEvents) {
+        if (event.metadata?.isShot && event.xg) {
+          shots.push({
+            playerId: event.playerId,
+            playerName: event.playerName,
+            team: event.team,
+            xg: event.xg,
+            timestamp: event.timestamp,
+            result: event.metadata.shotResult || 'pending',
+            position: event.ballPosition || event.position,
+          });
+        }
+        if (event.eventType === 'goal') {
+          if (event.team === 1) goals.red += 1;
+          if (event.team === 2) goals.blue += 1;
+          const goalTime = Date.parse(event.timestamp);
+          const priorShot = [...shots].reverse().find((shot) => {
+            if (shot.team !== event.team || shot.result === 'goal') return false;
+            const shotTime = Date.parse(shot.timestamp);
+            return goalTime - shotTime >= 0 && goalTime - shotTime <= 9000;
+          });
+          if (priorShot) priorShot.result = 'goal';
+        }
+      }
+      const summary = {
+        red: { totalShots: 0, totalXG: 0, goals: 0 },
+        blue: { totalShots: 0, totalXG: 0, goals: 0 },
+      };
+      for (const shot of shots) {
+        const team = shot.team === 1 ? 'red' : 'blue';
+        summary[team].totalShots += 1;
+        summary[team].totalXG += Number(shot.xg || 0);
+        if (shot.result === 'goal') summary[team].goals += 1;
+      }
+      summary.red.goals = Math.max(summary.red.goals, goals.red);
+      summary.blue.goals = Math.max(summary.blue.goals, goals.blue);
+      return { shots: { summary, shots } };
+    }
+
+    function displaySnapshot() {
+      if (!shouldShowDemo()) return state.latestSnapshot;
+      const snapshots = state.demoData?.snapshots || [];
+      return snapshots[demoSnapshotIndex()] || null;
+    }
+
+    function displayStats() {
+      return shouldShowDemo() && state.demoData ? makeReplayStats() : state.stats;
+    }
+
+    function displayEvents() {
+      return shouldShowDemo() && state.demoData ? demoEvents() : state.events;
+    }
+
+    function displayTrail() {
+      if (!shouldShowDemo() || !state.demoData) return state.ballTrail;
+      const snapshots = state.demoData.snapshots || [];
+      const index = demoSnapshotIndex();
+      return snapshots.slice(Math.max(0, index - 70), index + 1).map((snapshot) => snapshot.ball).filter(Boolean);
+    }
+
+    function displayRace() {
+      return shouldShowDemo() ? state.demoRace : state.xgRace;
+    }
+
     function shotSummary(team) {
-      return state.stats?.shots?.summary?.[team] || { totalShots: 0, totalXG: 0, goals: 0 };
+      return displayStats()?.shots?.summary?.[team] || { totalShots: 0, totalXG: 0, goals: 0 };
     }
 
     function drawPitch() {
@@ -456,12 +586,13 @@
     }
 
     function drawTrail() {
-      if (state.ballTrail.length < 2) return;
+      const trail = displayTrail();
+      if (trail.length < 2) return;
       fieldCtx.lineWidth = 2;
-      for (let i = 1; i < state.ballTrail.length; i++) {
-        const prev = state.ballTrail[i - 1];
-        const cur = state.ballTrail[i];
-        fieldCtx.strokeStyle = `rgba(245,201,95,${i / state.ballTrail.length * 0.55})`;
+      for (let i = 1; i < trail.length; i++) {
+        const prev = trail[i - 1];
+        const cur = trail[i];
+        fieldCtx.strokeStyle = `rgba(245,201,95,${i / trail.length * 0.55})`;
         fieldCtx.beginPath();
         fieldCtx.moveTo(fieldX(prev.x), fieldY(prev.y));
         fieldCtx.lineTo(fieldX(cur.x), fieldY(cur.y));
@@ -470,7 +601,7 @@
     }
 
     function drawShots() {
-      const shots = state.stats?.shots?.shots || [];
+      const shots = displayStats()?.shots?.shots || [];
       for (const shot of shots) {
         if (!shot.position) continue;
         const x = fieldX(shot.position.x);
@@ -522,7 +653,7 @@
     }
 
     function drawField() {
-      const snapshot = state.latestSnapshot;
+      const snapshot = displaySnapshot();
       drawPitch();
       if (state.layers.trail) drawTrail();
 
@@ -539,6 +670,7 @@
     }
 
     function drawRace() {
+      const race = displayRace();
       raceCtx.clearRect(0, 0, raceCanvas.width, raceCanvas.height);
       raceCtx.fillStyle = '#080d13';
       raceCtx.fillRect(0, 0, raceCanvas.width, raceCanvas.height);
@@ -551,20 +683,20 @@
         raceCtx.lineTo(raceCanvas.width - 10, y);
         raceCtx.stroke();
       }
-      if (state.xgRace.length < 2) {
+      if (race.length < 2) {
         raceCtx.fillStyle = '#5f6e82';
         raceCtx.font = '13px system-ui';
         raceCtx.textAlign = 'center';
         raceCtx.fillText('xG race appears after qualifying shots', raceCanvas.width / 2, raceCanvas.height / 2);
         return;
       }
-      const maxXg = Math.max(0.25, ...state.xgRace.map((p) => Math.max(p.red, p.blue)));
-      const maxTime = Math.max(1, ...state.xgRace.map((p) => p.time));
+      const maxXg = Math.max(0.25, ...race.map((p) => Math.max(p.red, p.blue)));
+      const maxTime = Math.max(1, ...race.map((p) => p.time));
       function plot(team, color) {
         raceCtx.strokeStyle = color;
         raceCtx.lineWidth = 3;
         raceCtx.beginPath();
-        state.xgRace.forEach((point, index) => {
+        race.forEach((point, index) => {
           const x = 28 + (point.time / maxTime) * (raceCanvas.width - 42);
           const y = raceCanvas.height - 20 - (point[team] / maxXg) * (raceCanvas.height - 42);
           if (index === 0) raceCtx.moveTo(x, y);
@@ -577,7 +709,7 @@
     }
 
     function renderLiveMetrics() {
-      const snapshot = state.latestSnapshot;
+      const snapshot = displaySnapshot();
       const red = shotSummary('red');
       const blue = shotSummary('blue');
       const redXg = Number(red.totalXG || 0);
@@ -585,7 +717,7 @@
       const redScore = snapshot?.score?.red || 0;
       const blueScore = snapshot?.score?.blue || 0;
       const leanValue = (redScore - blueScore) * 0.8 + (redXg - blueXg);
-      const kicks = state.events.filter((event) => event.eventType === 'kick').length;
+      const kicks = displayEvents().filter((event) => event.eventType === 'kick').length;
       const minutes = Math.max(1, (snapshot?.gameTime || 0) / 60);
       const lean = Math.abs(leanValue) < 0.18 ? 'Even' : leanValue > 0 ? 'Red' : 'Blue';
       document.getElementById('scoreMetric').textContent = snapshot ? `${redScore} - ${blueScore}` : '0 - 0';
@@ -601,7 +733,7 @@
     }
 
     function renderPressure() {
-      const snapshot = state.latestSnapshot;
+      const snapshot = displaySnapshot();
       const ballX = snapshot?.ball?.x || 0;
       const redPressure = Math.max(0, Math.min(100, Math.round((ballX + 370) / 740 * 100)));
       const bluePressure = 100 - redPressure;
@@ -616,25 +748,27 @@
       const blue = shotSummary('blue');
       const redXg = Number(red.totalXG || 0);
       const blueXg = Number(blue.totalXG || 0);
-      const shots = state.stats?.shots?.shots || [];
+      const shots = displayStats()?.shots?.shots || [];
       const latest = shots.at(-1);
       const insights = [];
+      if (shouldShowDemo()) insights.push('Room is empty right now, so these live panels are replaying a recorded match.');
       if (latest) insights.push(`Latest chance: ${latest.playerName} generated ${n(latest.xg)} xG for ${latest.team === 1 ? 'red' : 'blue'}.`);
       if (Math.abs(redXg - blueXg) > 0.25) insights.push(`${redXg > blueXg ? 'Red' : 'Blue'} owns the better chance profile by ${n(Math.abs(redXg - blueXg))} xG.`);
       const conversionRed = red.totalShots ? red.goals / red.totalShots : 0;
       const conversionBlue = blue.totalShots ? blue.goals / blue.totalShots : 0;
       if (red.totalShots || blue.totalShots) insights.push(`Conversion: red ${pct(conversionRed * 100)}, blue ${pct(conversionBlue * 100)}.`);
-      if (!insights.length) insights.push('No qualifying shots yet. The model is ignoring build-up kicks until they are goalward and in the opponent half.');
+      if (!insights.length) insights.push('No qualifying shots yet. The model is waiting for goalward kicks with enough threat.');
       document.getElementById('intelList').innerHTML = insights.map((item) => `<div class="intel">${escapeHtml(item)}</div>`).join('');
     }
 
     function renderEvents() {
       const feed = document.getElementById('eventFeed');
-      if (!state.events.length) {
+      const events = displayEvents();
+      if (!events.length) {
         feed.innerHTML = '<div class="empty">Waiting for room events</div>';
         return;
       }
-      feed.innerHTML = state.events.slice(-18).reverse().map((event) => {
+      feed.innerHTML = events.slice(-18).reverse().map((event) => {
         const teamClass = event.team === 1 ? 'team-red' : event.team === 2 ? 'team-blue' : '';
         const actor = event.playerName ? `<strong class="${teamClass}">${escapeHtml(event.playerName)}</strong>` : 'Room';
         const xg = event.metadata?.isShot ? ` · xG ${n(event.xg)}` : '';
@@ -643,7 +777,7 @@
     }
 
     function renderShots() {
-      const shots = state.stats?.shots?.shots || [];
+      const shots = displayStats()?.shots?.shots || [];
       const list = document.getElementById('shotList');
       if (!shots.length) {
         list.innerHTML = '<div class="empty">No qualifying shots yet</div>';
@@ -726,9 +860,9 @@
     }
 
     function renderLivePlayers() {
-      const snapshot = state.latestSnapshot;
+      const snapshot = displaySnapshot();
       const rows = (snapshot?.players || []).filter((p) => p.team > 0).map((player) => {
-        const playerShots = (state.stats?.shots?.shots || []).filter((shot) => shot.playerId === player.id);
+        const playerShots = (displayStats()?.shots?.shots || []).filter((shot) => shot.playerId === player.id);
         return {
           player: player.name,
           team: player.team === 1 ? 'Red' : 'Blue',
@@ -821,19 +955,28 @@
     }
 
     function updateDerivedSeries() {
-      const snapshot = state.latestSnapshot;
+      const demoMode = shouldShowDemo();
+      const snapshot = displaySnapshot();
       const red = Number(shotSummary('red').totalXG || 0);
       const blue = Number(shotSummary('blue').totalXG || 0);
       const time = snapshot?.gameTime || 0;
-      const last = state.xgRace.at(-1);
+      if (demoMode) {
+        const offset = demoElapsedMs();
+        if (offset < state.lastDemoOffset) state.demoRace = [];
+        state.lastDemoOffset = offset;
+      }
+      const series = demoMode ? state.demoRace : state.xgRace;
+      const last = series.at(-1);
       if (!last || last.red !== red || last.blue !== blue || Math.abs(last.time - time) > 3) {
-        state.xgRace.push({ time, red, blue });
-        state.xgRace = state.xgRace.slice(-80);
+        series.push({ time, red, blue });
+        if (demoMode) state.demoRace = series.slice(-80);
+        else state.xgRace = series.slice(-80);
       }
     }
 
     function renderAll() {
       updateDerivedSeries();
+      document.getElementById('demoNotice').classList.toggle('visible', shouldShowDemo());
       renderLiveMetrics();
       renderPressure();
       drawField();
@@ -897,11 +1040,15 @@
         if (payload.type === 'init') {
           state.events = payload.events || [];
           state.latestSnapshot = payload.snapshots?.at(-1) || null;
+          state.lastSnapshotAt = state.latestSnapshot?.timestamp
+            ? Date.parse(state.latestSnapshot.timestamp)
+            : 0;
           state.stats = payload.stats || null;
           state.ballTrail = (payload.snapshots || []).map((s) => s.ball).filter(Boolean).slice(-90);
         }
         if (payload.type === 'snapshot') {
           state.latestSnapshot = payload.data;
+          state.lastSnapshotAt = Date.now();
           if (payload.data?.ball) {
             state.ballTrail.push(payload.data.ball);
             state.ballTrail = state.ballTrail.slice(-90);
@@ -950,11 +1097,27 @@
       return appBasePath ? `${appBasePath}/` : '/';
     }
 
+    async function loadDemoMatch() {
+      try {
+        const response = await fetch(appUrl('/demo-match.json'));
+        if (!response.ok) throw new Error('demo replay unavailable');
+        state.demoData = await response.json();
+        state.demoStartedAt = Date.now();
+        renderAll();
+      } catch (error) {
+        console.warn(error);
+      }
+    }
+
     document.getElementById('bruinLogo').src = appUrl('/bruin-logo-2025.svg');
 
     connectWebSocket();
+    loadDemoMatch();
     refreshAnalytics();
     setInterval(refreshAnalytics, 30000);
+    setInterval(() => {
+      if (shouldShowDemo()) renderAll();
+    }, 400);
     renderAll();
   </script>
 </body>
