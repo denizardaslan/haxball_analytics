@@ -44,7 +44,7 @@ export function triggerAnalyticsRefresh(reason: string): Promise<AnalyticsRefres
   status.message = `Refreshing analytics after ${reason}.`;
 
   running = new Promise((resolve) => {
-    const child = spawn(bruinPath(), ['run', 'bruin'], {
+    const child = spawn(bruinPath(), ['run', '--workers', '1', 'bruin'], {
       cwd: process.cwd(),
       env: {
         ...process.env,
