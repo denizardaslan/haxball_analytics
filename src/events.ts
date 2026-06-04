@@ -101,6 +101,14 @@ function hasCompetitiveTeams(room: HaxballRoom): boolean {
   return playersByTeam(room, Team.Red).length > 0 && playersByTeam(room, Team.Blue).length > 0;
 }
 
+function winnerFromScores(scores: { red: number; blue: number } | null): Team.Red | Team.Blue | null {
+  if (!scores || scores.red === scores.blue) {
+    return null;
+  }
+
+  return scores.red > scores.blue ? Team.Red : Team.Blue;
+}
+
 function isTrackedGameActive(): boolean {
   return getCurrentGameId() !== null;
 }
@@ -453,9 +461,7 @@ function openLoserSelection(
 
 function handleGameRotation(room: HaxballRoom): void {
   const scores = room.getScores();
-  const winner =
-    pendingWinner ??
-    (scores && scores.red !== scores.blue ? (scores.red > scores.blue ? Team.Red : Team.Blue) : null);
+  const winner = pendingWinner ?? winnerFromScores(scores);
 
   pendingWinner = null;
 
@@ -479,6 +485,34 @@ function handleGameRotation(room: HaxballRoom): void {
   }
 
   setTimeout(() => openLoserSelection(room, loser, Math.max(1, winnerSize), waitingPlayers[0]), 150);
+}
+
+function finishTrackedGame(room: HaxballRoom, byPlayer?: RoomPlayer | null): void {
+  if (!isTrackedGameActive()) {
+    if (!isResettingSoloGoal) {
+      console.log('[Events] Untracked warm-up stopped');
+    }
+    return;
+  }
+
+  if (!isAnalyticsGameActive()) {
+    if (!isResettingSoloGoal) {
+      console.log('[Events] Live warm-up stopped');
+    }
+    endGame();
+    return;
+  }
+
+  pendingWinner = pendingWinner ?? winnerFromScores(room.getScores());
+
+  const event = createEvent('gameStop', getCurrentGameId());
+  if (byPlayer) {
+    event.playerId = byPlayer.id;
+    event.playerName = byPlayer.name;
+  }
+  emitEvent(event);
+  endGame();
+  setTimeout(() => handleGameRotation(room), 100);
 }
 
 function handleSelectionMessage(room: HaxballRoom, player: RoomPlayer, message: string): boolean {
@@ -615,34 +649,16 @@ export function setupEventHandlers(room: HaxballRoom): void {
   };
 
   room.onGameStop = (byPlayer) => {
-    if (!isTrackedGameActive()) {
-      if (!isResettingSoloGoal) {
-        console.log('[Events] Untracked warm-up stopped');
-      }
-      return;
-    }
+    finishTrackedGame(room, byPlayer);
+  };
 
-    if (!isAnalyticsGameActive()) {
-      if (!isResettingSoloGoal) {
-        console.log('[Events] Live warm-up stopped');
-      }
-      endGame();
-      return;
-    }
-
-    const scores = room.getScores();
-    if (scores && scores.red !== scores.blue) {
-      pendingWinner = scores.red > scores.blue ? Team.Red : Team.Blue;
-    }
-
-    const event = createEvent('gameStop', getCurrentGameId());
-    if (byPlayer) {
-      event.playerId = byPlayer.id;
-      event.playerName = byPlayer.name;
-    }
-    emitEvent(event);
-    endGame();
-    setTimeout(() => handleGameRotation(room), 100);
+  room.onTeamVictory = (scores) => {
+    pendingWinner = winnerFromScores(scores);
+    console.log(
+      `[Events] Team victory: ${scores.red}-${scores.blue}` +
+      (pendingWinner ? ` (${pendingWinner === Team.Red ? 'red' : 'blue'})` : '')
+    );
+    finishTrackedGame(room);
   };
 
   // Goal events

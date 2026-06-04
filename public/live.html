@@ -153,6 +153,54 @@
       flex: 0 0 auto;
     }
     .room-link:hover { border-color: rgba(82, 209, 143, 0.9); background: rgba(82, 209, 143, 0.18); }
+    .demo-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 7px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+    .demo-toggle .switch {
+      width: 30px;
+      height: 16px;
+      border-radius: 999px;
+      background: #1b2533;
+      border: 1px solid var(--line-strong);
+      position: relative;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+    .demo-toggle .switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform 140ms ease, background 140ms ease;
+    }
+    .demo-toggle.active {
+      color: var(--text);
+      border-color: rgba(245, 201, 95, 0.55);
+      background: rgba(245, 201, 95, 0.10);
+    }
+    .demo-toggle.active .switch {
+      background: rgba(245, 201, 95, 0.20);
+      border-color: rgba(245, 201, 95, 0.72);
+    }
+    .demo-toggle.active .switch::after {
+      transform: translateX(14px);
+      background: var(--yellow);
+    }
     .status, .pill {
       display: inline-flex;
       align-items: center;
@@ -256,6 +304,7 @@
       font-weight: 850;
     }
     .demo-notice.visible { display: flex; }
+    .demo-notice-text { flex: 1 1 auto; min-width: 180px; }
     .demo-notice span {
       color: var(--yellow);
       text-transform: uppercase;
@@ -264,6 +313,19 @@
       font-weight: 950;
       white-space: nowrap;
     }
+    .demo-notice button,
+    .watch-replay {
+      border: 1px solid rgba(245, 201, 95, 0.58);
+      border-radius: 6px;
+      background: rgba(245, 201, 95, 0.12);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 950;
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+    .demo-notice button.hidden { display: none; }
 
     .table-wrap { overflow: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 780px; }
@@ -275,6 +337,7 @@
     .match-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
     .match-card { padding: 0; overflow: hidden; }
     .match-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 13px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.025); }
+    .match-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .match-date { color: var(--muted); font-size: 12px; }
     .winner-pill { border: 1px solid var(--line-strong); border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 950; text-transform: uppercase; }
     .winner-pill.red { color: var(--red); border-color: rgba(255,83,100,0.45); }
@@ -323,7 +386,8 @@
       </div>
     </div>
     <div class="header-right">
-      <a class="room-link" href="https://www.haxball.com/play?c=DHgxJb-xI4M" target="_blank" rel="noopener noreferrer">Join Room</a>
+      <a class="room-link" href="https://www.haxball.com/play?c=3p3RZMObC2U" target="_blank" rel="noopener noreferrer">Join Room</a>
+      <button id="demoToggle" class="demo-toggle active" type="button" aria-pressed="true"><span class="switch" aria-hidden="true"></span><span id="demoToggleText">Replay On</span></button>
       <a class="bruin-badge" href="https://getbruin.com/" target="_blank" rel="noopener noreferrer" title="Powered by Bruin">
         <span class="bruin-copy">Powered by</span>
         <img id="bruinLogo" src="bruin-logo-2025.svg" alt="Bruin">
@@ -344,7 +408,11 @@
 
   <main>
     <section id="live" class="view active">
-      <div id="demoNotice" class="demo-notice"><span>Replay mode</span> Room is empty, so a recorded match replay is showing. Live data will appear automatically when players join.</div>
+      <div id="demoNotice" class="demo-notice">
+        <span id="replayNoticeLabel">Replay mode</span>
+        <div id="replayNoticeText" class="demo-notice-text">Room is empty, so a recorded match replay is showing. Live data will appear automatically when players join.</div>
+        <button id="closeReplayButton" class="hidden" type="button">Back to live</button>
+      </div>
       <div class="kpi-grid">
         <div class="panel"><div class="metric-label">Score</div><div id="scoreMetric" class="metric-value">0 - 0</div><div class="metric-sub">current match</div></div>
         <div class="panel"><div class="metric-label">Clock</div><div id="timeMetric" class="metric-value">0:00</div><div class="metric-sub">game time</div></div>
@@ -410,6 +478,9 @@
       xgRace: [],
       demoRace: [],
       demoData: null,
+      selectedReplayData: null,
+      selectedReplayTitle: '',
+      demoEnabled: localStorage.getItem('haxanalyticsDemoEnabled') !== 'false',
       lastSnapshotAt: 0,
       demoStartedAt: Date.now(),
       lastDemoOffset: 0,
@@ -423,15 +494,18 @@
     const fieldCtx = fieldCanvas.getContext('2d');
     const raceCanvas = document.getElementById('raceCanvas');
     const raceCtx = raceCanvas.getContext('2d');
+    const demoToggle = document.getElementById('demoToggle');
+    const demoToggleText = document.getElementById('demoToggleText');
+    const closeReplayButton = document.getElementById('closeReplayButton');
+
+    function activateView(view) {
+      document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.view === view));
+      document.querySelectorAll('.view').forEach((section) => section.classList.toggle('active', section.id === view));
+      renderAll();
+    }
 
     document.querySelectorAll('.tab').forEach((button) => {
-      button.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
-        document.querySelectorAll('.view').forEach((view) => view.classList.remove('active'));
-        button.classList.add('active');
-        document.getElementById(button.dataset.view).classList.add('active');
-        renderAll();
-      });
+      button.addEventListener('click', () => activateView(button.dataset.view));
     });
 
     document.querySelectorAll('.field-btn').forEach((button) => {
@@ -441,6 +515,31 @@
         button.classList.toggle('active', state.layers[layer]);
         drawField();
       });
+    });
+
+    demoToggle.addEventListener('click', () => {
+      state.demoEnabled = !state.demoEnabled;
+      localStorage.setItem('haxanalyticsDemoEnabled', state.demoEnabled ? 'true' : 'false');
+      if (state.demoEnabled) {
+        state.demoStartedAt = Date.now();
+        state.demoRace = [];
+        state.lastDemoOffset = 0;
+      }
+      renderAll();
+    });
+
+    closeReplayButton.addEventListener('click', () => {
+      state.selectedReplayData = null;
+      state.selectedReplayTitle = '';
+      state.demoRace = [];
+      state.lastDemoOffset = 0;
+      renderAll();
+    });
+
+    document.getElementById('matchCards').addEventListener('click', (event) => {
+      const button = event.target.closest('.watch-replay');
+      if (!button) return;
+      void watchReplay(button.dataset.gameId, button.dataset.title || 'Match replay');
     });
 
     function fieldX(x) { return ((x + 370) / 740) * fieldCanvas.width; }
@@ -453,24 +552,34 @@
     function pct(value) { return `${Math.round(Number(value || 0))}%`; }
 
     function shouldShowDemo() {
+      if (!state.demoEnabled || !state.demoData) return false;
       const realPlayers = state.latestSnapshot?.players || [];
       const staleSnapshot = !state.lastSnapshotAt || Date.now() - state.lastSnapshotAt > 10000;
       return !state.latestSnapshot || staleSnapshot || realPlayers.length === 0;
     }
 
+    function isPlaybackMode() {
+      return Boolean(state.selectedReplayData) || shouldShowDemo();
+    }
+
+    function playbackData() {
+      return state.selectedReplayData || (shouldShowDemo() ? state.demoData : null);
+    }
+
     function demoOffsetMs(item) {
-      if (!state.demoData?.startedAt || !item?.timestamp) return 0;
-      return Date.parse(item.timestamp) - Date.parse(state.demoData.startedAt);
+      const data = playbackData();
+      if (!data?.startedAt || !item?.timestamp) return 0;
+      return Date.parse(item.timestamp) - Date.parse(data.startedAt);
     }
 
     function demoElapsedMs() {
-      const duration = state.demoData?.durationMs || 0;
+      const duration = playbackData()?.durationMs || 0;
       if (!duration) return 0;
       return (Date.now() - state.demoStartedAt) % duration;
     }
 
     function demoSnapshotIndex() {
-      const snapshots = state.demoData?.snapshots || [];
+      const snapshots = playbackData()?.snapshots || [];
       const elapsed = demoElapsedMs();
       let index = 0;
       for (let i = 0; i < snapshots.length; i++) {
@@ -481,9 +590,10 @@
     }
 
     function demoEvents() {
-      if (!state.demoData) return [];
+      const data = playbackData();
+      if (!data) return [];
       const elapsed = demoElapsedMs();
-      return (state.demoData.events || []).filter((event) => demoOffsetMs(event) <= elapsed);
+      return (data.events || []).filter((event) => demoOffsetMs(event) <= elapsed);
     }
 
     function makeReplayStats() {
@@ -530,28 +640,29 @@
     }
 
     function displaySnapshot() {
-      if (!shouldShowDemo()) return state.latestSnapshot;
-      const snapshots = state.demoData?.snapshots || [];
+      if (!isPlaybackMode()) return state.latestSnapshot;
+      const snapshots = playbackData()?.snapshots || [];
       return snapshots[demoSnapshotIndex()] || null;
     }
 
     function displayStats() {
-      return shouldShowDemo() && state.demoData ? makeReplayStats() : state.stats;
+      return isPlaybackMode() && playbackData() ? makeReplayStats() : state.stats;
     }
 
     function displayEvents() {
-      return shouldShowDemo() && state.demoData ? demoEvents() : state.events;
+      return isPlaybackMode() && playbackData() ? demoEvents() : state.events;
     }
 
     function displayTrail() {
-      if (!shouldShowDemo() || !state.demoData) return state.ballTrail;
-      const snapshots = state.demoData.snapshots || [];
+      const data = playbackData();
+      if (!isPlaybackMode() || !data) return state.ballTrail;
+      const snapshots = data.snapshots || [];
       const index = demoSnapshotIndex();
       return snapshots.slice(Math.max(0, index - 70), index + 1).map((snapshot) => snapshot.ball).filter(Boolean);
     }
 
     function displayRace() {
-      return shouldShowDemo() ? state.demoRace : state.xgRace;
+      return isPlaybackMode() ? state.demoRace : state.xgRace;
     }
 
     function shotSummary(team) {
@@ -751,7 +862,8 @@
       const shots = displayStats()?.shots?.shots || [];
       const latest = shots.at(-1);
       const insights = [];
-      if (shouldShowDemo()) insights.push('Room is empty right now, so these live panels are replaying a recorded match.');
+      if (state.selectedReplayData) insights.push(`Watching replay: ${state.selectedReplayTitle || 'selected match'}.`);
+      else if (shouldShowDemo()) insights.push('Room is empty right now, so these live panels are replaying a recorded match.');
       if (latest) insights.push(`Latest chance: ${latest.playerName} generated ${n(latest.xg)} xG for ${latest.team === 1 ? 'red' : 'blue'}.`);
       if (Math.abs(redXg - blueXg) > 0.25) insights.push(`${redXg > blueXg ? 'Red' : 'Blue'} owns the better chance profile by ${n(Math.abs(redXg - blueXg))} xG.`);
       const conversionRed = red.totalShots ? red.goals / red.totalShots : 0;
@@ -831,7 +943,10 @@
           <article class="panel match-card">
             <div class="match-top">
               <span class="match-date">${new Date(row.started_at).toLocaleString()}</span>
-              <span class="winner-pill ${winner}">Winner: ${winner}</span>
+              <div class="match-actions">
+                <button class="watch-replay" type="button" data-game-id="${row.game_id}" data-title="${escapeAttr(`${row.red_players || 'Red'} vs ${row.blue_players || 'Blue'}`)}">Watch Replay</button>
+                <span class="winner-pill ${winner}">Winner: ${winner}</span>
+              </div>
             </div>
             <div class="match-scoreboard">
               <div class="team-box red">
@@ -955,7 +1070,7 @@
     }
 
     function updateDerivedSeries() {
-      const demoMode = shouldShowDemo();
+      const demoMode = isPlaybackMode();
       const snapshot = displaySnapshot();
       const red = Number(shotSummary('red').totalXG || 0);
       const blue = Number(shotSummary('blue').totalXG || 0);
@@ -976,7 +1091,16 @@
 
     function renderAll() {
       updateDerivedSeries();
-      document.getElementById('demoNotice').classList.toggle('visible', shouldShowDemo());
+      const demoMode = isPlaybackMode();
+      demoToggle.classList.toggle('active', state.demoEnabled);
+      demoToggle.setAttribute('aria-pressed', String(state.demoEnabled));
+      demoToggleText.textContent = state.demoEnabled ? 'Replay On' : 'Replay Off';
+      document.getElementById('replayNoticeLabel').textContent = state.selectedReplayData ? 'Match replay' : 'Replay mode';
+      document.getElementById('replayNoticeText').textContent = state.selectedReplayData
+        ? `${state.selectedReplayTitle || 'Selected match'} is playing from recorded room data.`
+        : 'Room is empty, so a recorded match replay is showing. Live data will appear automatically when players join.';
+      closeReplayButton.classList.toggle('hidden', !state.selectedReplayData);
+      document.getElementById('demoNotice').classList.toggle('visible', demoMode);
       renderLiveMetrics();
       renderPressure();
       drawField();
@@ -1021,6 +1145,21 @@
         console.warn(error);
       }
       renderAll();
+    }
+
+    async function watchReplay(gameId, title) {
+      if (!gameId) return;
+      try {
+        const data = await fetchApi(`/api/replay/${gameId}`);
+        state.selectedReplayData = data;
+        state.selectedReplayTitle = title;
+        state.demoStartedAt = Date.now();
+        state.demoRace = [];
+        state.lastDemoOffset = 0;
+        activateView('live');
+      } catch (error) {
+        console.warn(error);
+      }
     }
 
     function connectWebSocket() {
@@ -1077,6 +1216,10 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    function escapeAttr(text) {
+      return escapeHtml(text).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
     }
 
     const appBasePath = (() => {
