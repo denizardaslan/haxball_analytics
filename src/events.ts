@@ -186,6 +186,17 @@ function startOrRestartGame(room: HaxballRoom, restart: boolean): void {
   }
 }
 
+function stopGameIfNoActivePlayers(room: HaxballRoom): boolean {
+  if (activePlayerCount(room) > 0 || !room.getScores()) {
+    return false;
+  }
+
+  console.log('[Events] No active players left - stopping current game');
+  clearSelection();
+  room.stopGame();
+  return true;
+}
+
 function announce(room: HaxballRoom, message: string, targetId?: number, color = ANNOUNCEMENT_COLOR): void {
   room.sendAnnouncement(message, targetId, color, 'bold', 1);
 }
@@ -285,6 +296,8 @@ function normalizeActiveTeams(room: HaxballRoom, restartAfterFill = false): void
     if (firstSpec) {
       setManagedTeam(room, firstSpec.id, Team.Red);
       startOrRestartGame(room, restartAfterFill);
+    } else {
+      stopGameIfNoActivePlayers(room);
     }
     return;
   }
@@ -809,12 +822,16 @@ export function setupEventHandlers(room: HaxballRoom): void {
     playerActivity.delete(player.id);
     bruinChatLastUsed.delete(player.id);
 
-  if (player.id === selectionCaptainId) {
+    if (player.id === selectionCaptainId) {
       clearSelection();
     }
 
     if (oldTeam === Team.Red || oldTeam === Team.Blue) {
-      setTimeout(() => normalizeActiveTeams(room), 100);
+      setTimeout(() => {
+        if (!stopGameIfNoActivePlayers(room)) {
+          normalizeActiveTeams(room);
+        }
+      }, 100);
     } else if (selectionTeam != null) {
       setTimeout(() => announceSelectionChoices(room), 100);
     }

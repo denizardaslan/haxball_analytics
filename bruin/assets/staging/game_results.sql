@@ -32,20 +32,27 @@ custom_checks:
     value: 1
 @bruin */
 
-WITH ranked AS (
+WITH scored_snapshots AS (
+  SELECT
+    *,
+    array_length(players) AS active_player_count
+  FROM raw.haxball_snapshots
+),
+ranked AS (
   SELECT
     *,
     row_number() OVER (PARTITION BY game_id ORDER BY snapshot_ts DESC) AS rn
-  FROM raw.haxball_snapshots
+  FROM scored_snapshots
+  WHERE active_player_count >= 2
 ),
 snap_summary AS (
   SELECT
     game_id,
     min(snapshot_ts) AS started_at,
-    max(snapshot_ts) AS ended_at,
-    max(game_time) - min(game_time) AS duration_seconds,
+    max(CASE WHEN active_player_count >= 2 THEN snapshot_ts ELSE NULL END) AS ended_at,
+    max(CASE WHEN active_player_count >= 2 THEN game_time ELSE NULL END) - min(game_time) AS duration_seconds,
     count(*) AS snapshot_count
-  FROM raw.haxball_snapshots
+  FROM scored_snapshots
   GROUP BY 1
 ),
 players AS (
