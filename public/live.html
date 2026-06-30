@@ -1243,9 +1243,12 @@
     }
 
     const appBasePath = (() => {
-      const path = location.pathname.endsWith('/live.html')
-        ? location.pathname.slice(0, -'/live.html'.length)
-        : location.pathname.replace(/\/$/, '');
+      const cleanPath = location.pathname.replace(/\/$/, '');
+      const path = cleanPath.endsWith('/live.html')
+        ? cleanPath.slice(0, -'/live.html'.length)
+        : cleanPath.endsWith('/live')
+          ? cleanPath.slice(0, -'/live'.length)
+          : cleanPath;
       return path === '/' ? '' : path;
     })();
 
