@@ -380,20 +380,20 @@
     <div class="masthead-left">
       <div class="app-mark" aria-hidden="true">HA</div>
       <div class="title-block">
-        <div class="eyebrow">Live football intelligence cockpit</div>
+        <div class="eyebrow">Archived football intelligence cockpit</div>
         <h1>Haxball Match Intelligence</h1>
-        <div class="subtitle">xG, player quality, lineup strength, and Bruin-validated pipeline health from real match events.</div>
+        <div class="subtitle">xG, player quality, lineup strength, and pipeline health from archived public-room match events.</div>
       </div>
     </div>
     <div class="header-right">
-      <a class="room-link" href="https://www.haxball.com/play?c=ctOT7EtHDVk" target="_blank" rel="noopener noreferrer">Join Room</a>
+      <a class="room-link" href="https://github.com/denizardaslan/haxball_analytics" target="_blank" rel="noopener noreferrer">Project Repo</a>
       <button id="demoToggle" class="demo-toggle active" type="button" aria-pressed="true"><span class="switch" aria-hidden="true"></span><span id="demoToggleText">Replay On</span></button>
       <a class="bruin-badge" href="https://getbruin.com/" target="_blank" rel="noopener noreferrer" title="Powered by Bruin">
         <span class="bruin-copy">Powered by</span>
         <img id="bruinLogo" src="bruin-logo-2025.svg" alt="Bruin">
       </a>
-      <div class="pill">Refresh <strong id="refreshState">idle</strong></div>
-      <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting</span></div>
+      <div class="pill">Mode <strong id="refreshState">archive</strong></div>
+      <div class="status"><span id="statusDot" class="dot connected"></span><span id="statusText">Static archive</span></div>
     </div>
   </header>
 
@@ -410,7 +410,7 @@
     <section id="live" class="view active">
       <div id="demoNotice" class="demo-notice">
         <span id="replayNoticeLabel">Replay mode</span>
-        <div id="replayNoticeText" class="demo-notice-text">Room is empty, so a recorded match replay is showing. Live data will appear automatically when players join.</div>
+        <div id="replayNoticeText" class="demo-notice-text">The live room is offline, so a recorded match replay is showing from the archived dataset.</div>
         <button id="closeReplayButton" class="hidden" type="button">Back to live</button>
       </div>
       <div class="kpi-grid">
@@ -470,6 +470,8 @@
   </main>
 
   <script>
+    const ARCHIVE_MODE = true;
+
     const state = {
       latestSnapshot: null,
       stats: null,
@@ -1098,7 +1100,7 @@
       document.getElementById('replayNoticeLabel').textContent = state.selectedReplayData ? 'Match replay' : 'Replay mode';
       document.getElementById('replayNoticeText').textContent = state.selectedReplayData
         ? `${state.selectedReplayTitle || 'Selected match'} is playing from recorded room data.`
-        : 'Room is empty, so a recorded match replay is showing. Live data will appear automatically when players join.';
+        : 'The live room is offline, so a recorded match replay is showing from the archived dataset.';
       closeReplayButton.classList.toggle('hidden', !state.selectedReplayData);
       document.getElementById('demoNotice').classList.toggle('visible', demoMode);
       renderLiveMetrics();
@@ -1116,9 +1118,22 @@
     }
 
     async function fetchApi(endpoint) {
-      const res = await fetch(appUrl(endpoint));
+      const res = await fetch(appUrl(staticEndpoint(endpoint)));
       if (!res.ok) throw new Error(`${endpoint} failed`);
       return res.json();
+    }
+
+    function staticEndpoint(endpoint) {
+      if (!ARCHIVE_MODE) return endpoint;
+      if (endpoint.startsWith('/api/analytics/')) {
+        return `/static-data/analytics/${endpoint.split('/').at(-1)}.json`;
+      }
+      if (endpoint === '/api/pipeline/status') return '/static-data/pipeline-status.json';
+      if (endpoint === '/api/analytics-refresh/status') return '/static-data/analytics-refresh-status.json';
+      if (endpoint.startsWith('/api/replay/')) {
+        return `/static-data/replays/${endpoint.split('/').at(-1)}.json`;
+      }
+      return endpoint;
     }
 
     async function refreshAnalytics() {
@@ -1163,6 +1178,11 @@
     }
 
     function connectWebSocket() {
+      if (ARCHIVE_MODE) {
+        statusDot.classList.add('connected');
+        statusText.textContent = 'Static archive';
+        return;
+      }
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
       const socket = new WebSocket(`${protocol}://${location.host}${appWsPath()}`);
       socket.addEventListener('open', () => {
@@ -1226,9 +1246,6 @@
       const path = location.pathname.endsWith('/live.html')
         ? location.pathname.slice(0, -'/live.html'.length)
         : location.pathname.replace(/\/$/, '');
-      if ((path === '' || path === '/') && location.hostname.startsWith('haxanalytics.')) {
-        return '/haxanalytics';
-      }
       return path === '/' ? '' : path;
     })();
 
@@ -1257,7 +1274,7 @@
     connectWebSocket();
     loadDemoMatch();
     refreshAnalytics();
-    setInterval(refreshAnalytics, 30000);
+    if (!ARCHIVE_MODE) setInterval(refreshAnalytics, 30000);
     setInterval(() => {
       if (shouldShowDemo()) renderAll();
     }, 400);

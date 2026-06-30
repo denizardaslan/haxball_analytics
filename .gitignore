@@ -18,6 +18,7 @@ build/
 
 # Data files (local backups and analytics)
 data/
+backups/
 *.jsonl
 *.parquet
 !sample_data/
